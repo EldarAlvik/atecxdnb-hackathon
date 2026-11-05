@@ -1,0 +1,18 @@
+# Models to compare. All use the ANTHROPIC_API_KEY in .env that the Scam Call
+# Guardian board already uses (see board/GUARDIAN.md on the push-probe branch).
+#
+# `price` is list price in $ per million tokens (Anthropic first-party API,
+# checked 2026-11-05). Haiku 5.5 doubles to $0.50 / $2.50 above 100K-token
+# prompts, which these tests never reach.
+
+models:
+  # What the board runs today (SG_CLAUDE_MODEL).
+  - model: anthropic/claude-haiku-5-5
+    price: {input: 0.10, output: 0.50}
+    note: on the device
+
+  # Same key, bigger models, to see what an upgrade would buy.
+  - model: anthropic/claude-sonnet-5-5
+    price: {input: 2.00, output: 10.00}
+  - model: anthropic/claude-opus-5-5
+    price: {input: 4.00, output: 20.00}

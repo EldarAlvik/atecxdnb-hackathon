@@ -1,0 +1,269 @@
+# Scam-detection cases. Each scenario exists in Norwegian (no) and English (en)
+# so the report can show whether a model is weaker in one language.
+#
+# label:
+#   SCAM   - the person should not act on it; warn them
+#   SAFE   - ordinary, harmless message/call
+#   VERIFY - could be real, but must be checked through a known channel
+#            (call back on the old number, ask for the family safe word, ...)
+#
+# channel: sms | call | email | chat
+# category: the scam type, used to group results in the report
+# difficulty: easy | medium | hard
+#
+# Add cases by copying a block. Keep ids unique; give the no/en pair the same
+# scenario id so the report can line them up.
+
+- scenario: hi-mum-new-number
+  category: family_impersonation
+  difficulty: easy
+  label: SCAM
+  channel: sms
+  no: |
+    Hei mamma, dette er mitt nye nummer, det gamle er ødelagt 😩 Kan du lagre det?
+    Jeg har et problem, må betale en regning i dag men banken min er sperret.
+    Kan du vippse 8 900 kr til en kompis av meg så betaler jeg tilbake i morgen? Ikke ring, telefonen er så dårlig.
+  en: |
+    Hi mum, this is my new number, my old phone broke 😩 Can you save it?
+    I have a problem, I need to pay a bill today but my bank is locked.
+    Can you send £850 to my friend's account and I'll pay you back tomorrow? Don't call, the line is really bad.
+
+- scenario: fake-bank-employee-bankid
+  category: bank_impersonation
+  difficulty: easy
+  label: SCAM
+  channel: call
+  no: |
+    [Telefonsamtale, transkribert]
+    Innringer: God dag, jeg ringer fra DNB sin sikkerhetsavdeling. Vi ser at noen prøver å ta opp et lån i ditt navn akkurat nå.
+    Innringer: For å stoppe det må jeg bekrefte at det er deg. Kan du lese opp koden du får på BankID-brikken eller i appen?
+    Innringer: Det haster, ellers går lånet gjennom om fem minutter.
+  en: |
+    [Phone call, transcribed]
+    Caller: Good afternoon, I'm calling from your bank's fraud department. Someone is trying to take out a loan in your name right now.
+    Caller: To stop it I need to confirm it's you. Can you read me the one-time code you just received in your banking app?
+    Caller: It's urgent, the loan goes through in five minutes otherwise.
+
+- scenario: fake-police-safe-account
+  category: authority_impersonation
+  difficulty: medium
+  label: SCAM
+  channel: call
+  no: |
+    [Telefonsamtale, transkribert]
+    Innringer: Dette er politibetjent Hansen fra Oslo politidistrikt. Vi etterforsker en ansatt i banken din som stjeler fra kunder.
+    Innringer: Pengene dine er ikke trygge. Du må flytte sparepengene til en sikker konto som politiet har opprettet. Jeg gir deg kontonummeret.
+    Innringer: Ikke snakk med banken om dette, da kan du ødelegge etterforskningen.
+  en: |
+    [Phone call, transcribed]
+    Caller: This is Detective Constable Hansen from the Metropolitan Police. We are investigating an employee at your bank who is stealing from customers.
+    Caller: Your money is not safe. You need to move your savings to a secure account the police have set up. I'll give you the account number.
+    Caller: Don't discuss this with the bank, it could compromise the investigation.
+
+- scenario: parcel-customs-fee
+  category: delivery_phishing
+  difficulty: easy
+  label: SCAM
+  channel: sms
+  no: |
+    Posten: Pakken din (NO2384-77) venter på tollbehandling. Betal gebyr på 29 kr innen 24 timer, ellers returneres den: https://posten-norge-toll.info/betal
+  en: |
+    Royal Mail: Your parcel (RM2384-77) is held at customs. Pay the £1.99 handling fee within 24 hours or it will be returned: https://royalmail-customs-fee.info/pay
+
+- scenario: tax-refund-link
+  category: authority_impersonation
+  difficulty: easy
+  label: SCAM
+  channel: email
+  no: |
+    Fra: Skatteetaten <refusjon@skatt-etaten-no.com>
+    Emne: Du har 4 312 kr til gode
+    Vi har beregnet at du har krav på tilbakebetaling av skatt. Logg inn med kortnummer og CVC innen 48 timer for å motta beløpet: https://skatt-etaten-no.com/refusjon
+  en: |
+    From: HMRC <refunds@hmrc-gov-uk.com>
+    Subject: You are owed £412
+    We have calculated that you are due a tax refund. Enter your card number and CVC within 48 hours to receive the payment: https://hmrc-gov-uk.com/refund
+
+- scenario: tech-support-remote
+  category: tech_support
+  difficulty: medium
+  label: SCAM
+  channel: call
+  no: |
+    [Telefonsamtale, transkribert]
+    Innringer: Hei, jeg ringer fra Microsoft. Datamaskinen din sender ut virus til andre, vi har fått varsel om det.
+    Innringer: Jeg kan fikse det for deg. Last ned programmet AnyDesk og les opp nummeret som kommer opp, så tar jeg over skjermen.
+    Innringer: Etterpå må du logge inn i nettbanken så vi kan sjekke at ingenting er stjålet.
+  en: |
+    [Phone call, transcribed]
+    Caller: Hello, I'm calling from Microsoft. Your computer is sending viruses to other people, we received an alert.
+    Caller: I can fix it for you. Download the program AnyDesk and read me the number it shows, then I'll take over the screen.
+    Caller: After that, log in to your online bank so we can check nothing was stolen.
+
+- scenario: crypto-celebrity
+  category: investment
+  difficulty: medium
+  label: SCAM
+  channel: chat
+  no: |
+    Hei! Jeg så du likte innlegget om investering. Jeg jobber med en plattform som Petter Stordalen har anbefalt på TV2.
+    Du setter inn 2 500 kr og roboten handler krypto for deg, folk får 300 % avkastning på en måned. Jeg kan ringe deg og hjelpe deg i gang i dag, tilbudet gjelder bare til midnatt.
+  en: |
+    Hi! I saw you liked the post about investing. I work with a platform that Martin Lewis recommended on TV.
+    You deposit £250 and the robot trades crypto for you, people get 300% returns in a month. I can call you and get you started today, the offer ends at midnight.
+
+- scenario: romance-emergency
+  category: romance
+  difficulty: medium
+  label: SCAM
+  channel: chat
+  no: |
+    Min kjære, jeg har tenkt på deg hele dagen ❤️ Jeg er fortsatt på oljeplattformen, men det har skjedd noe forferdelig.
+    Datteren min er på sykehus i Lagos og de krever betaling før operasjonen. Kontoen min er frosset til jeg kommer i land.
+    Kan du sende 15 000 kr med Western Union? Jeg lover å betale tilbake når vi endelig møtes.
+  en: |
+    My darling, I've been thinking about you all day ❤️ I'm still on the oil rig, but something terrible happened.
+    My daughter is in hospital in Lagos and they want payment before the surgery. My account is frozen until I'm back onshore.
+    Could you send $1,500 by Western Union? I promise to pay you back when we finally meet.
+
+- scenario: marketplace-buyer-link
+  category: marketplace
+  difficulty: medium
+  label: SCAM
+  channel: chat
+  no: |
+    [Melding på FINN.no]
+    Hei, jeg vil kjøpe sofaen din for full pris. Jeg bor i Bergen så jeg sender en budfirma-henting.
+    Jeg har allerede betalt via FINN Smidig Levering, du må bare bekrefte mottak og legge inn kortet ditt her for å få pengene: https://finn-levering-betaling.com/motta
+  en: |
+    [Marketplace message]
+    Hi, I want to buy your sofa for the full price. I live far away so I'll arrange a courier pickup.
+    I've already paid through the secure delivery service, you just need to confirm receipt and enter your card here to receive the money: https://marketplace-safe-delivery.com/receive
+
+- scenario: grandchild-arrested-lawyer
+  category: family_impersonation
+  difficulty: hard
+  label: SCAM
+  channel: call
+  no: |
+    [Telefonsamtale, transkribert]
+    Innringer (gråtende): Bestemor? Det er meg... jeg har vært i en bilulykke og politiet har tatt meg. Vær så snill, ikke si det til mamma.
+    Annen stemme: Hei, jeg er advokaten hans. Han må betale kausjon på 40 000 kr i dag for å slippe ut. En kurér kan komme hjem til deg og hente kontanter eller bankkortet ditt med PIN.
+  en: |
+    [Phone call, transcribed]
+    Caller (crying): Grandma? It's me... I've been in a car accident and the police arrested me. Please, don't tell mum.
+    Second voice: Hello, I'm his lawyer. He has to pay $4,000 bail today to get out. A courier can come to your house to collect cash, or your bank card and PIN.
+
+- scenario: ai-voice-clone-son
+  category: family_impersonation
+  difficulty: hard
+  label: SCAM
+  channel: call
+  no: |
+    [Telefonsamtale fra ukjent nummer, transkribert. Stemmen høres ut som sønnen.]
+    Innringer: Pappa, det er Jonas. Hør, jeg kan ikke snakke lenge. Jeg er i trøbbel og trenger at du overfører 25 000 kr til denne kontoen nå, 1503.22.18842.
+    Innringer: Jeg forklarer alt senere, ikke ring meg tilbake på det vanlige nummeret, den telefonen er beslaglagt.
+  en: |
+    [Phone call from unknown number, transcribed. The voice sounds like the son.]
+    Caller: Dad, it's James. Listen, I can't talk long. I'm in trouble and need you to transfer $2,500 to this account right now, routing 021000021, account 88412290.
+    Caller: I'll explain everything later, don't call me back on my usual number, that phone has been confiscated.
+
+- scenario: invoice-change-of-account
+  category: invoice_fraud
+  difficulty: hard
+  label: SCAM
+  channel: email
+  no: |
+    Fra: Regnskap Hansen Rør AS <faktura@hansen-ror.no>
+    Emne: VIKTIG: Nytt kontonummer
+    Hei, vi har byttet bank. Fakturaen for baderomsjobben (48 750 kr) må betales til nytt kontonummer 9710.05.44120 i stedet for det som står på fakturaen. Det gamle kontoet stenges i morgen, så betal gjerne i dag.
+  en: |
+    From: Accounts, Hansen Plumbing Ltd <invoices@hansen-plumbing.co.uk>
+    Subject: IMPORTANT: New bank details
+    Hello, we have changed banks. The invoice for the bathroom job (£4,875) must be paid to our new account, sort code 40-11-62, account 44120971, instead of the one on the invoice. The old account closes tomorrow, so please pay today.
+
+- scenario: bank-real-card-alert
+  category: bank_notice
+  difficulty: medium
+  label: SAFE
+  channel: sms
+  no: |
+    DNB: Kortet ditt som slutter på 4821 ble brukt til et kjøp på 349 kr hos REMA 1000 Majorstuen. Var dette ikke deg, sperr kortet i DNB-appen eller ring nummeret bak på kortet.
+  en: |
+    Your bank: Your card ending 4821 was used for a £34.90 purchase at Tesco Express. If this wasn't you, freeze the card in your banking app or call the number on the back of your card.
+
+- scenario: dentist-reminder
+  category: everyday
+  difficulty: easy
+  label: SAFE
+  channel: sms
+  no: |
+    Påminnelse: Du har time hos Tannlege Berg tirsdag 12. november kl. 10:30. Gi beskjed senest 24 timer før om du ikke kan møte. Svar ikke på denne meldingen.
+  en: |
+    Reminder: You have an appointment at Berg Dental on Tuesday 12 November at 10:30. Please let us know at least 24 hours in advance if you cannot attend. Do not reply to this message.
+
+- scenario: friend-dinner-split
+  category: everyday
+  difficulty: easy
+  label: SAFE
+  channel: sms
+  no: |
+    Hei Kari! Så hyggelig i går 😊 Jeg sendte deg en Vipps-forespørsel på 420 kr for maten, det var din del av regningen. Ses på trening torsdag!
+  en: |
+    Hi Kari! Lovely evening yesterday 😊 I sent you a payment request for £42 for the food, that was your share of the bill. See you at training on Thursday!
+
+- scenario: grandson-call-no-money
+  category: family_genuine
+  difficulty: medium
+  label: SAFE
+  channel: call
+  no: |
+    [Telefonsamtale fra lagret nummer «Emil barnebarn», transkribert]
+    Innringer: Hei bestemor! Bare ringte for å si at jeg kommer på middag på søndag likevel. Skal jeg ta med noe? Mamma sa du ville ha hjelp med telefonen også.
+  en: |
+    [Phone call from saved contact "Emil grandson", transcribed]
+    Caller: Hi grandma! Just calling to say I can come for dinner on Sunday after all. Should I bring anything? Mum said you wanted help with your phone as well.
+
+- scenario: parcel-real-notice
+  category: delivery_notice
+  difficulty: medium
+  label: SAFE
+  channel: sms
+  no: |
+    Posten: Sendingen din 70730259912345678 er klar for henting på Kiwi Grünerløkka. Husk legitimasjon. Hentes innen 14 dager. Spor sendingen i Posten-appen.
+  en: |
+    Royal Mail: Your parcel RM301234567GB is ready for collection at your local Post Office. Bring photo ID. Collect within 18 days. Track it in the Royal Mail app.
+
+- scenario: daughter-new-phone-verify
+  category: family_ambiguous
+  difficulty: hard
+  label: VERIFY
+  channel: sms
+  no: |
+    Hei pappa, det er Ingrid. Mistet telefonen på toget, låner en venninnes telefon nå. Alt er bra! Kan du ringe meg i kveld på dette nummeret? Vil gjerne høre om du kan hente meg på flyplassen fredag.
+  en: |
+    Hi dad, it's Ingrid. Lost my phone on the train, borrowing a friend's phone now. All good! Can you call me tonight on this number? Wanted to ask if you can pick me up from the airport on Friday.
+
+- scenario: bank-asks-callback
+  category: bank_notice
+  difficulty: hard
+  label: VERIFY
+  channel: call
+  no: |
+    [Telefonsamtale, transkribert]
+    Innringer: Hei, dette er Marte fra DNB. Vi har stoppet en betaling fra kontoen din som så uvanlig ut. Jeg skal ikke be om koder eller passord.
+    Innringer: Du kan gjerne legge på og ringe oss tilbake på nummeret som står på dnb.no, så ser vi på det sammen.
+  en: |
+    [Phone call, transcribed]
+    Caller: Hi, this is Marte from your bank. We stopped a payment from your account that looked unusual. I won't ask for any codes or passwords.
+    Caller: You're welcome to hang up and call us back on the number on our official website, and we'll look at it together.
+
+- scenario: prize-winner-fee
+  category: lottery
+  difficulty: easy
+  label: SCAM
+  channel: sms
+  no: |
+    GRATULERER! Ditt mobilnummer er trukket ut som vinner av en iPhone 17 Pro i Elkjøps julelotteri 🎉 Betal kun 19 kr i frakt her for å motta premien: https://elkjop-vinner.net/krav
+  en: |
+    CONGRATULATIONS! Your mobile number has been drawn as the winner of an iPhone 17 Pro in the Currys Christmas draw 🎉 Just pay £1.99 shipping here to claim your prize: https://currys-winner.net/claim

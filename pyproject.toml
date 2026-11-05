@@ -4,5 +4,8 @@ version = "0.1.0"
 description = "ATEC x DNB hackathon project using the Atech Python SDK"
 requires-python = ">=3.12"
 dependencies = [
+    "anthropic>=2.5.0",
     "atech>=1.0.0a12",
+    "inspect-ai>=0.3.287",
+    "python-dotenv>=1.2.4",
 ]
