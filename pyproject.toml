@@ -7,5 +7,7 @@ dependencies = [
     "anthropic>=2.5.0",
     "atech>=1.0.0a12",
     "inspect-ai>=0.3.287",
+    "openai>=3.46.0",
+    "openai-codex>=0.163.0",
     "python-dotenv>=1.2.4",
 ]

@@ -18,3 +18,4 @@ dist/
 
 # Inspect eval logs
 logs/
+logs-*.txt

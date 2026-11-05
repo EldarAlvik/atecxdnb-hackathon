@@ -19,6 +19,7 @@ import yaml
 from inspect_ai.log import EvalLog, list_eval_logs, read_eval_log
 
 HERE = Path(__file__).parent
+OWN_TASKS = {"scam_detection", "safe_word", "safe_word_isolated"}
 ROOT = HERE.parent
 
 
@@ -62,6 +63,8 @@ def latest_logs(log_dir: Path) -> list[EvalLog]:
     newest: dict[tuple[str, str], EvalLog] = {}
     for info in list_eval_logs(str(log_dir)):
         log = read_eval_log(info)
+        if log.eval.task.split("/")[-1] not in OWN_TASKS:
+            continue  # call_scenarios has its own report (report_calls.py)
         key = (log.eval.model, log.eval.task)
         if key not in newest or log.eval.created > newest[key].eval.created:
             newest[key] = log
@@ -74,7 +77,9 @@ def pct(xs) -> str:
 
 
 def short_model(m: str) -> str:
-    return m.removeprefix("anthropic/")
+    for prefix in ("anthropic/", "openai-api/ntnu/"):
+        m = m.removeprefix(prefix)
+    return m
 
 
 # ---------------------------------------------------------------------------

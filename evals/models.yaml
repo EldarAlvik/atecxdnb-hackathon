@@ -1,18 +1,36 @@
-# Models to compare. All use the ANTHROPIC_API_KEY in .env that the Scam Call
-# Guardian board already uses (see board/GUARDIAN.md on the push-probe branch).
+# Models to compare.
 #
-# `price` is list price in $ per million tokens (Anthropic first-party API,
-# checked 2026-11-05). Haiku 5.5 doubles to $0.50 / $2.50 above 100K-token
-# prompts, which these tests never reach.
+# billing: how this run is paid for.
+# price:   list API price in $ per million tokens, for comparing what each
+#          model would cost in production (checked 2026-11-05). Codex and
+#          NTNU runs don't bill per token, so for them it is a reference only.
+# tools:   false = the provider can't run tasks that give the model tools
+#          (the safe-word tasks); run.py skips those for it.
 
 models:
-  # What the board runs today (SG_CLAUDE_MODEL).
+  # Anthropic API (ANTHROPIC_API_KEY in .env). Haiku is what the board runs.
   - model: anthropic/claude-haiku-5-5
+    billing: Anthropic API
     price: {input: 0.10, output: 0.50}
-    note: on the device
-
-  # Same key, bigger models, to see what an upgrade would buy.
   - model: anthropic/claude-sonnet-5-5
+    billing: Anthropic API
     price: {input: 2.00, output: 10.00}
-  - model: anthropic/claude-opus-5-5
-    price: {input: 4.00, output: 20.00}
+
+  # OpenAI through the Codex SDK and the local ChatGPT login.
+  - model: codex/gpt-6.1-terra
+    billing: ChatGPT plan via Codex
+    price: {input: 1.00, output: 5.00}
+    tools: false
+  - model: codex/gpt-6-luna
+    billing: ChatGPT plan via Codex
+    price: {input: 0.10, output: 0.50}
+    tools: false
+
+  # NTNU's own servers (data stays inside NTNU). -instant = no reasoning,
+  # like the board's thinking-off request.
+  - model: openai-api/ntnu/deepseek-ai/DeepSeek-V4.1-Flash-1017-instant
+    billing: NTNU (free)
+    price: {input: 0.045, output: 0.50}
+  - model: openai-api/ntnu/Qwen/Qwen3.8-27B-FP8-instant
+    billing: NTNU (free)
+    price: {input: 0.15, output: 1.875}

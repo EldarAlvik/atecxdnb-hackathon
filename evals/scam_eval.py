@@ -46,6 +46,10 @@ from inspect_ai.tool import tool
 from inspect_ai.util import store
 
 DATA = Path(__file__).parent / "data"
+
+import sys as _sys
+_sys.path.insert(0, str(Path(__file__).resolve().parent))
+import providers  # noqa: E402,F401  (codex + NTNU providers, .env)
 Lang = Literal["no", "en"]
 LANGS: tuple[Lang, ...] = ("no", "en")
 

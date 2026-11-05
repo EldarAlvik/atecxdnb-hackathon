@@ -1,0 +1,43 @@
+# Tiny fixture for testing the harness itself. Files starting with "_" are
+# skipped by default; run with: -T files=_smoke.yaml
+- id: smoke-bank-bankid-no
+  lang: no
+  category: bank_impersonation
+  difficulty: easy
+  expected: scam
+  detect_by: 2
+  tags: [bankid, urgency, smoke]
+  notes: Caller claims DNB security and asks for the BankID code in chunk 2.
+  chunks:
+    - "hallo hei det er martin fra dnb sin sikkerhetsavdeling snakker jeg med kari"
+    - "ja vi har sett noen mistenkelige transaksjoner på kontoen din i natt fra litauen"
+    - "for å stoppe dem må du bekrefte med bank id nå du får en kode på telefonen kan du lese den opp for meg"
+    - "det haster ellers forsvinner pengene ikke legg på og ikke snakk med noen andre"
+
+- id: smoke-dentist-reminder-en
+  lang: en
+  category: legit_everyday
+  difficulty: easy
+  expected: safe
+  detect_by: null
+  tags: [appointment, smoke]
+  notes: Ordinary dental appointment reminder, nothing is requested.
+  chunks:
+    - "hi this is sarah from bright smile dental calling for john"
+    - "just a reminder you have a cleaning appointment tomorrow at ten thirty"
+    - "oh right thanks yes i'll be there do i need to bring anything"
+    - "no just come ten minutes early see you tomorrow bye bye"
+
+- id: smoke-unknown-parcel-mix
+  lang: mixed
+  category: delivery
+  difficulty: medium
+  expected: verify
+  detect_by: null
+  tags: [courier, ambiguous, smoke]
+  notes: Courier asks to confirm address only; could be legit or a setup call.
+  chunks:
+    - "hei hello this is from posten bring about your package"
+    - "we could not deliver i dag kan du bekrefte adressen din"
+    - "ja det er storgata tolv er det noe jeg må betale"
+    - "we will send you an sms with a link for the new delivery time ok ha det"
