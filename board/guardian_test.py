@@ -1,10 +1,12 @@
 """End-to-end check: turn guarding on, speak test lines through the laptop
-speakers with Windows TTS, and print the board's guardian events.
+speakers (macOS `say`, otherwise Windows TTS through PowerShell), and print the
+board's guardian events.
 
     uv run python board/guardian_test.py [--seconds 150] [--no-speech]
 """
 import argparse
 import subprocess
+import sys
 import threading
 import time
 
@@ -15,10 +17,13 @@ BENIGN = ("Hi, it's Anna from the dentist. I'm calling to confirm your appointme
 SCAM = ("Hello, this is the security department of your bank. Your account has been "
         "compromised and your money is at risk. Please read me the code from BankID right "
         "now so we can secure your money. Do not tell anyone about this call.")
-KEYS = {"guard", "wifi", "ws", "transcript", "verdict", "health", "error", "ws_msg", "wifi_retry"}
+KEYS = {"guard", "wifi", "ws", "transcript", "verdict", "health", "error", "ws_msg", "wifi_retry", "auto_off"}
 
 
 def say(text: str) -> None:
+    if sys.platform == "darwin":
+        subprocess.run(["say", text], check=False)
+        return
     ps = ("Add-Type -AssemblyName System.Speech; "
           "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; $s.Volume = 100; "
           "$s.Rate = -1; $s.Speak($env:SG_TEXT)")

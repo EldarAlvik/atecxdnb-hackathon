@@ -57,6 +57,10 @@ uv run atech check
   then "LISTENING" with a breathing blue yellow-grid. Each verdict lights one grid:
   green = safe, yellow = unsure, red = scam. **Scam stays red until guarding is
   turned off.** "AI err" (yellow) means the Claude call failed; it retries.
+- **Green expires:** a safe verdict older than 20 s turns yellow ("No recent check")
+  until the next verdict, so a pause in the call also shows yellow.
+- **Auto-off:** guarding stops after 5 minutes without speech (30 minutes after a
+  scam verdict) and always after 2 hours.
 - Screen: verdict, `W+/W-` (WiFi) and `STT+/STT-` (Deepgram), Claude's reason,
   and the last words of the transcript (æøå shown as ae/o/a).
 
@@ -66,7 +70,7 @@ From the laptop (one program on the port at a time):
 uv run atech send guard on         # or off / toggle
 uv run atech send gain 8           # mic digital gain 1..64 (default 8)
 uv run atech monitor --key verdict # or transcript, health, wifi, ws, guard, error
-uv run python board/guardian_test.py   # guard on, speak test lines via Windows TTS, print events
+uv run python board/guardian_test.py   # guard on, speak test lines (macOS say or Windows TTS), print events
 ```
 
 ## Events (JSON lines over USB serial)
@@ -79,7 +83,7 @@ uv run python board/guardian_test.py   # guard on, speak test lines via Windows 
 | `transcript` | `{text, lang}` per final Deepgram segment |
 | `verdict` | `{verdict, reason, latched, http, ms, chars}` (+ `detail` on errors) |
 | `health` | `{free_heap, min_free_heap, max_block, audio_sent, audio_dropped, ai_calls, ai_ms, mic_level, ...}` every 5 s |
-| `error`, `ws_msg`, `wifi_retry` | log lines |
+| `error`, `ws_msg`, `wifi_retry`, `auto_off` | log lines |
 
 ## Caveats
 
