@@ -1,0 +1,8 @@
+name: blink
+board: 14port
+# Starter project: press the button, the light grid changes colour.
+# Works on the real board (`atech upload examples/blink`) and on the fake one
+# (`uv run python -m simboard serve examples/blink`).
+modules:
+  - {id: button,   instance: button, port: 1}
+  - {id: neopixel, instance: grid,   port: 2}
