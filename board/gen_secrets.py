@@ -24,7 +24,9 @@ def parse_env(path: Path) -> dict:
         key, value = line.split("=", 1)
         key = key.strip().removeprefix("export ").strip()
         value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        if value.startswith("#"):  # only a comment after "=": the value is empty
+            value = ""
+        elif len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
             value = value[1:-1]
         elif " #" in value:  # unquoted value: drop an inline " # comment"
             value = value.split(" #", 1)[0].rstrip()

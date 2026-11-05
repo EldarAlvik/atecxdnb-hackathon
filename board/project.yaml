@@ -47,6 +47,10 @@ code:
     static const size_t   SG_AUDIO_BUF_BYTES = 16000;  // 0.5 s of 16 kHz 16-bit mono (heap is tight)
     static const size_t   SG_AUDIO_CHUNK     = 3200;   // 100 ms per WebSocket frame
     static const size_t   SG_TRANSCRIPT_MAX  = 2400;   // rolling window (bytes)
+    static const uint32_t SG_VERDICT_MAX_AGE_MS = 20000;              // SAFE older than this turns yellow
+    static const uint32_t SG_IDLE_OFF_MS        = 5UL * 60 * 1000;    // auto-off after this long without speech
+    static const uint32_t SG_SCAM_IDLE_OFF_MS   = 30UL * 60 * 1000;   // same, but keeps a scam warning visible longer
+    static const uint32_t SG_MAX_SESSION_MS     = 2UL * 60 * 60 * 1000; // hard limit: a TV can keep "speech" going forever
 
     static const char* SG_SYSTEM_PROMPT =
         "You are a real-time phone-scam detector protecting a person in Norway. You get a "
@@ -84,6 +88,8 @@ code:
     static volatile bool     g_scamLatched = false;
     static volatile uint32_t g_aiCalls = 0, g_aiLastMs = 0;
     static volatile int      g_aiLastHttp  = 0;
+    static volatile uint32_t g_lastVerdictMs = 0;     // last valid Claude verdict
+    static volatile uint32_t g_lastSpeechMs  = 0;     // last accepted transcript segment
 
     // ---------------- events (JSON lines, printed from loop only) ----------------
     // Tasks never touch Serial: the generated firmware prints its own events from
@@ -162,6 +168,7 @@ code:
         g_transcript.remove(0, cut < 0 ? g_transcript.length() - SG_TRANSCRIPT_MAX * 3 / 4 : cut + 1);
       }
       g_txtVersion++;
+      g_lastSpeechMs = millis();
       xSemaphoreGive(g_mtx);
       JsonDocument d; d["text"] = text; if (lang) d["lang"] = lang;
       sgEmitDoc("state", "transcript", d);
@@ -309,6 +316,15 @@ code:
         if (ver == lastVersion || text.length() == 0) continue;
         if (!tls.connected() && ESP.getMaxAllocHeap() < 20000) {   // TLS needs ~17 KB blocks
           lastCall = millis();
+          // A skipped check counts as a failed one, so the screen shows that the
+          // AI is not running instead of keeping the last verdict.
+          failStreak++;
+          xSemaphoreTake(g_mtx, portMAX_DELAY);
+          if (session == g_session && g_guarding && !g_scamLatched &&
+              (g_verdict == V_NONE || g_verdict == V_AIERR || failStreak >= 3)) {
+            g_verdict = V_AIERR; g_reason = "low memory";
+          }
+          xSemaphoreGive(g_mtx);
           sgEmitStr("log", "error", String("ai: low heap, skipped (max block ") + ESP.getMaxAllocHeap() + ")");
           continue;
         }
@@ -370,6 +386,7 @@ code:
         if (current && !g_scamLatched) {
           if (v != V_AIERR) {
             g_verdict = v; g_reason = reason;
+            g_lastVerdictMs = millis();
             if (v == V_SCAM) g_scamLatched = true;
           } else if (g_verdict == V_NONE || g_verdict == V_AIERR || failStreak >= 3) {
             // One transient error keeps the last verdict; show "AI err" only with
@@ -450,8 +467,9 @@ code:
     led_yellow.clear(); led_yellow.show();
     led_red.clear();    led_red.show();
   loop: |
-    static EveryTimer frame, lights, stats;
+    static EveryTimer frame, lights, stats, staleCheck;
     static uint32_t wifiBeganAt = 0;
+    static uint32_t guardStartedAt = 0;
     static int lastWifi = -1;
 
     // ---- guard on/off: the button (edge, used only here) or the laptop ----
@@ -470,11 +488,30 @@ code:
       if (g >= 1 && g <= 64) g_gain = g; else atechFail("gain must be 1..64");
       atechDone();
     }
+
+    // ---- auto-off: stop streaming audio when guarding was left on ----
+    if (g_guarding && want < 0) {
+      // Read the shared timestamp before millis(): the WebSocket task may update
+      // it in between, and a newer timestamp would underflow the subtraction.
+      uint32_t lastSpeech = g_lastSpeechMs;
+      uint32_t nowMs = millis();
+      uint32_t idleLimit = g_scamLatched ? SG_SCAM_IDLE_OFF_MS : SG_IDLE_OFF_MS;
+      const char* why = nullptr;
+      if (nowMs - guardStartedAt > SG_MAX_SESSION_MS) why = "max session reached";
+      else if (nowMs - lastSpeech > idleLimit) why = "no speech";
+      if (why) {
+        want = 0;
+        sgEmitStr("log", "auto_off", why);
+      }
+    }
+
     if (want >= 0 && (bool)want != g_guarding) {
       if (want) {
+        guardStartedAt = millis();
         xSemaphoreTake(g_mtx, portMAX_DELAY);
         g_transcript = ""; g_txtVersion = 0;
         g_verdict = V_NONE; g_reason = ""; g_scamLatched = false;
+        g_lastSpeechMs = guardStartedAt;
         g_session++;
         g_guarding = true;
         xSemaphoreGive(g_mtx);
@@ -505,6 +542,25 @@ code:
       else WiFi.begin(SG_WIFI_SSID);
       wifiBeganAt = millis();
       sgEmitStr("log", "wifi_retry", SG_WIFI_SSID);
+    }
+
+    // ---- stale SAFE watchdog: green only while verdicts are recent ----
+    // Runs here because the AI task can block for many seconds inside a call.
+    if (staleCheck.ready(500) && g_guarding && g_verdict == V_SAFE) {
+      bool expired = false;
+      xSemaphoreTake(g_mtx, portMAX_DELAY);
+      if (g_guarding && g_verdict == V_SAFE && millis() - g_lastVerdictMs > SG_VERDICT_MAX_AGE_MS) {
+        g_verdict = V_UNSURE; g_reason = "No recent check";
+        expired = true;
+      }
+      xSemaphoreGive(g_mtx);
+      if (expired) {
+        JsonDocument d;
+        d["verdict"] = "unsure";
+        d["reason"] = "No recent check";
+        d["latched"] = false;
+        sgEmitDoc("state", "verdict", d);
+      }
     }
 
     // ---- traffic light ----
