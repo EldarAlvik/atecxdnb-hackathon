@@ -107,6 +107,8 @@ sealed interface Alert {
 
 fun alertsFor(before: LiveState?, after: LiveState): List<Alert> = buildList {
     if (!after.known) return@buildList
+    // On the first status after the app starts, a leftover verdict from a finished call is old news.
+    if (before == null && !after.guarding) return@buildList
     if (after.verdict == Verdict.SCAM && before?.verdict != Verdict.SCAM) add(Alert.Scam(after.reason))
     val wm = after.wordMatch
     if (wm != null && wm != before?.wordMatch) add(Alert.WordHeard(wm.member))

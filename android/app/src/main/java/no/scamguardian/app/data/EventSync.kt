@@ -92,11 +92,14 @@ class EventSyncer(
     companion object {
         /**
          * Seqs the board dropped before we read them, or null. The protocol's rule is
-         * `since < oldest_seq - 1`. An empty log (no events, `oldest_seq > last_seq`) lost nothing.
+         * `since < oldest_seq - 1`. Two cases are left out because nothing the phone had a
+         * claim to was lost: the very first sync (`since == 0`; filtered events such as
+         * `startup` also use up numbers, so the oldest logged seq is often above 1), and an
+         * empty log (no events, `oldest_seq > last_seq`).
          */
         fun lostRange(since: Long, page: EventsPage): Pair<Long, Long>? {
             val logEmpty = page.events.isEmpty() && page.oldestSeq > page.lastSeq
-            if (logEmpty || since >= page.oldestSeq - 1) return null
+            if (since == 0L || logEmpty || since >= page.oldestSeq - 1) return null
             return (since + 1) to (page.oldestSeq - 1)
         }
     }

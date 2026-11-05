@@ -201,7 +201,7 @@ private fun VerdictLight(live: LiveState) {
             if (live.reason.isNotEmpty()) {
                 Text(live.reason, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
             }
-            if (live.latched) {
+            if (live.latched && live.guarding) {
                 Text(
                     "Stays red until guarding is turned off",
                     style = MaterialTheme.typography.labelMedium,

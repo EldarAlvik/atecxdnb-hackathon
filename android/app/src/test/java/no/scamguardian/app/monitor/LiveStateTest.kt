@@ -71,8 +71,9 @@ class LiveStateTest {
         val scam = base.copy(verdict = "scam", reason = "BankID")
         assertEquals(listOf(Alert.Scam("BankID")), alertsFor(base, scam))
         assertTrue(alertsFor(scam, scam.copy(reason = "still")).isEmpty())
-        // First status after start already red: alert once.
-        assertEquals(listOf(Alert.Scam("BankID")), alertsFor(null, scam))
+        // First status after start already red: alert if a call is being guarded, not for a finished one.
+        assertEquals(listOf(Alert.Scam("BankID")), alertsFor(null, scam.copy(guarding = true)))
+        assertTrue(alertsFor(null, scam).isEmpty())
 
         val word = base.copy(wordMatch = WordMatch(2, "Ola"))
         assertEquals(listOf(Alert.WordHeard("Ola")), alertsFor(base, word))

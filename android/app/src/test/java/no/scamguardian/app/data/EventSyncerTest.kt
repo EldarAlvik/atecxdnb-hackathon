@@ -174,7 +174,9 @@ class EventSyncerTest {
         fun page(oldest: Long, last: Long, empty: Boolean = false) =
             EventsPage(if (empty) emptyList() else listOf(JsonObject(emptyMap())), last, oldest, false)
         assertNull(EventSyncer.lostRange(0, page(oldest = 1, last = 10)))
-        assertEquals(1L to 1332L, EventSyncer.lostRange(0, page(oldest = 1333, last = 1832)))
+        // First sync: older history was never the phone's, so it is not a gap.
+        assertNull(EventSyncer.lostRange(0, page(oldest = 1333, last = 1832)))
+        assertEquals(2L to 1332L, EventSyncer.lostRange(1, page(oldest = 1333, last = 1832)))
         assertEquals(101L to 1332L, EventSyncer.lostRange(100, page(oldest = 1333, last = 1832)))
         assertNull(EventSyncer.lostRange(1332, page(oldest = 1333, last = 1832)))
         // An empty log (oldest = last + 1) lost nothing.

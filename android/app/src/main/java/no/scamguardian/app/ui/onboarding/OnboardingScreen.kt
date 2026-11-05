@@ -173,7 +173,7 @@ private fun ScanStep(ui: OnboardingUi, vm: OnboardingViewModel) {
 
 @Composable
 private fun WifiStep(ui: OnboardingUi, vm: OnboardingViewModel) {
-    var ssid by remember { mutableStateOf("") }
+    var ssid by remember { mutableStateOf(ui.joiningSsid) } // keep the name after a failed try
     var pass by remember { mutableStateOf("") }
     var show by remember { mutableStateOf(false) }
 

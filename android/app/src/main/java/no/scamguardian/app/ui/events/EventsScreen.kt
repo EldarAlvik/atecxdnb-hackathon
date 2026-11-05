@@ -37,6 +37,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -98,7 +100,7 @@ class EventsViewModel @Inject constructor(
 
     val ui: StateFlow<EventsUi> = combine(dao.recent(1000), dao.gaps(200), monitor.connection, local) { ev, gaps, c, loc ->
         loc.copy(items = buildFeed(ev, gaps, loc.callOnly), connection = c)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), EventsUi())
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), EventsUi())
 
     fun setCallOnly(on: Boolean) = local.update { it.copy(callOnly = on) }
 
