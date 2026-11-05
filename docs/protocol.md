@@ -87,7 +87,11 @@ bytes (long reads and writes are fine).
 
 `saved_ssid` is empty when no network is saved. The password is never sent back.
 
-`networks` (read after `scanned`), strongest first, at most 12:
+A notification longer than the MTU allows is cut short; if it does not parse as
+JSON, read `status` instead, which always holds the latest full value.
+
+`networks` (read after `scanned`), strongest first, at most 12 and at most 512
+bytes:
 
 ```json
 [{"ssid":"Home","rssi":-48,"secure":true},{"ssid":"Guest","rssi":-71,"secure":false}]
@@ -96,7 +100,7 @@ bytes (long reads and writes are fine).
 ### The device token
 
 - 32 random bytes from the hardware RNG, sent as 64 lowercase hex characters, once,
-  in the `connected` notification.
+  in the `connected` notification. (The mock's token can be any string.)
 - The board stores only `SHA-256(token)` in NVS, so the token cannot be read back.
 - Every successful `wifi` or `pair` makes a new token and the old one stops working.
   One phone holds the token at a time.
@@ -160,8 +164,14 @@ Events with `seq > since`, oldest first. `since` defaults to `0`, `limit` to 100
 ```
 
 `more:true` means more events are waiting after the last one returned; ask again
-with `since` = the last `seq` you got. If `since < oldest_seq - 1`, events were lost
-from the ring buffer. The app should note the gap.
+with `since` = the last `seq` you got.
+
+Missing numbers are normal: `health` and keys switched off in `events` use up a
+`seq` but are not logged. Events *may* have been lost from the ring when
+`since > 0`, the log is not empty (`oldest_seq <= last_seq`) and
+`since < oldest_seq - 1`; the app shows this as a possible gap. If `last_seq` is
+lower than what the app already has, the board's log was reset (reflashed or
+erased): start counting again from 0.
 
 ### `GET /config`, `POST /config`
 
@@ -185,7 +195,7 @@ them in NVS and returns the full config. If one value is bad, nothing is saved.
 | `ai_interval_s` | int | 3-60 | Minimum gap between Claude verdicts |
 | `language` | string | `multi`, `no`, `en` | Deepgram language. `multi` = Norwegian and English. Takes effect on the next guard-on |
 | `red_latch` | bool | | `true`: a scam verdict stays red until guarding stops |
-| `events` | string[] | keys from section 4 | Which event keys go to the WebSocket and the event log. USB serial always gets every event |
+| `events` | string[] | `guard`, `wifi`, `ws`, `transcript`, `verdict`, `health`, `word_match`, `setup`, `config`, `words`, `degraded`, `error` | Which event keys go to the WebSocket and the event log. `startup`, `ws_msg` and `wifi_retry` are always sent. USB serial always gets every event |
 | `screen_brightness` | int | 10-100 (%) | The screen's backlight is wired to always on, so this dims the drawn colours |
 
 ### `GET /words`
@@ -228,7 +238,9 @@ Answers `{"setup":true}`, then restarts the board into BLE setup mode.
 `ws://guardian.local:81/?token=<token>`. The token goes in the query string: the
 board does not read an `Authorization` header on the upgrade. A wrong token is
 refused: either the upgrade fails with HTTP 401 (the mock), or the socket is closed
-right after it opens (the board). Clients must handle both. The board
+right after it opens (the board). Clients must handle both. A close before `hello`
+does not say why (bad token, too many clients, low memory): call `GET /status`,
+whose `401` means the token is no longer valid. The board
 takes at most **2** clients; a third is closed.
 
 The board's first message:

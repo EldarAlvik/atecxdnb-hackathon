@@ -112,7 +112,10 @@ class HttpBoardClientTest {
         val msgs = client.live().take(2).toList()
         assertEquals(LiveMessage.Hello("guardian-ab12", "2.0.0", 2, 3), msgs[0])
         assertEquals("guard", (msgs[1] as LiveMessage.Event).event.key)
-        assertEquals("Bearer tok123", server.takeRequest().headers["Authorization"])
+        val req = server.takeRequest()
+        // The board only reads the token from the query string.
+        assertEquals("/?token=tok123", req.target)
+        assertEquals("Bearer tok123", req.headers["Authorization"])
     }
 
     @Test

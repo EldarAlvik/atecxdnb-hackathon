@@ -123,7 +123,10 @@ class HttpBoardClient(
     }
 
     override fun live(): Flow<LiveMessage> = callbackFlow {
-        val wsUrl = HttpUrl.Builder().scheme("http").host(LocalDns.BOARD_HOST).port(endpoint.wsPort).build()
+        // The board reads the WebSocket token from the query string only
+        // (docs/protocol.md section 3); the header is for the mock and harmless.
+        val wsUrl = HttpUrl.Builder().scheme("http").host(LocalDns.BOARD_HOST).port(endpoint.wsPort)
+            .addPathSegment("").addQueryParameter("token", endpoint.token).build()
         val req = Request.Builder().url(wsUrl.toString().replaceFirst("http:", "ws:"))
             .header("Authorization", "Bearer ${endpoint.token}")
             .build()
