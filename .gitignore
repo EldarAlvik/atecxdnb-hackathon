@@ -15,3 +15,6 @@ dist/
 .env
 .vscode/
 .idea/
+
+# Scam Call Guardian: generated firmware secrets (from .env)
+board/secrets.h

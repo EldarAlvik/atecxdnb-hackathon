@@ -1,0 +1,548 @@
+name: scam_call_guardian
+board: 14port
+# Scam Call Guardian: mic -> Deepgram live STT (TLS WebSocket) -> Claude Haiku
+# verdict (HTTPS) -> traffic light on three grids + status screen. Everything runs
+# on the board. Secrets: `uv run python board/gen_secrets.py` (see GUARDIAN.md).
+libraries:
+  - links2004/WebSockets@^2.6.1
+  - bblanchon/ArduinoJson@^7.2.0
+modules:
+  - {id: microphone, instance: microphone, ports: [5, 6]}
+  - {id: button,     instance: button,     port: 7}
+  # Port 12 is the Reset button on this board, so the three grids sit in the
+  # three slots above it (9, 10, 11). Red is next to the screen, green on top.
+  # If the colours come out in the wrong grids, swap these three port numbers.
+  - {id: neopixel,   instance: led_green,  port: 9}
+  - {id: neopixel,   instance: led_yellow, port: 10}
+  - {id: neopixel,   instance: led_red,    port: 11}
+  - {id: st7735_tft, instance: st7735_tft, ports: [13, 14]}
+code:
+  globals: |
+    #include <WiFi.h>
+    #include <WiFiClientSecure.h>
+    #include <HTTPClient.h>
+    #include <WebSocketsClient.h>
+    #include <ArduinoJson.h>
+    #include "freertos/stream_buffer.h"
+    #include "freertos/queue.h"
+    #include "freertos/semphr.h"
+
+    // board/secrets.h is generated from .env and git-ignored. From
+    // board/build/src/main.cpp, "../../secrets.h" is board/secrets.h.
+    #if __has_include("../../secrets.h")
+    #include "../../secrets.h"
+    #else
+    #error "board/secrets.h missing: run `uv run python board/gen_secrets.py` from the repo root"
+    #endif
+
+    // ---------------- configuration ----------------
+    static const char* SG_DG_HOST = "api.deepgram.com";
+    static const char* SG_DG_PATH =
+        "/v1/listen?encoding=linear16&sample_rate=16000&channels=1&model=nova-3"
+        "&language=multi&smart_format=true&interim_results=false"
+        "&endpointing=100&language_hint=no&language_hint=en";
+    static const char* SG_CLAUDE_URL   = "https://api.anthropic.com/v1/messages";
+    static const char* SG_CLAUDE_MODEL = "claude-haiku-5-5";
+    static const uint32_t SG_AI_PERIOD_MS    = 6000;   // min gap between verdict calls
+    static const size_t   SG_AUDIO_BUF_BYTES = 16000;  // 0.5 s of 16 kHz 16-bit mono (heap is tight)
+    static const size_t   SG_AUDIO_CHUNK     = 3200;   // 100 ms per WebSocket frame
+    static const size_t   SG_TRANSCRIPT_MAX  = 2400;   // rolling window (bytes)
+
+    static const char* SG_SYSTEM_PROMPT =
+        "You are a real-time phone-scam detector protecting a person in Norway. You get a "
+        "live speech-to-text transcript of an ongoing phone call (Norwegian, English, or "
+        "mixed; both speakers merged; may contain recognition errors). Judge whether the "
+        "CALLER is attempting fraud. Strong scam signals: impersonating a bank (DNB, Nordea, "
+        "SpareBank, 'security department'), BankID, Vipps, police (politiet), Økokrim, tax "
+        "authority (Skatteetaten), NAV, Microsoft/Apple/tech support or a courier; claims the "
+        "account is compromised or money is at risk; urgency or secrecy pressure; asking "
+        "for codes, passwords, PINs, BankID codes or confirmations, card numbers, one-time "
+        "codes; asking to install apps or give remote access (AnyDesk, TeamViewer); moving "
+        "money to a 'safe account', crypto, or buying gift cards; investment or prize "
+        "offers too good to be true. Reply ONLY with compact JSON, no other text: "
+        "{\"verdict\":\"safe\"|\"unsure\"|\"scam\",\"reason\":\"<max 8 words>\"}. Write the "
+        "reason in the language the call is mostly in: Norwegian (bokmål) for a Norwegian "
+        "call, English for an English call. Use \"safe\" only when the call is clearly "
+        "ordinary; when in doubt or when there is too little context, use \"unsure\".";
+
+    // ---------------- shared state ----------------
+    enum SgVerdict : uint8_t { V_NONE = 0, V_SAFE, V_UNSURE, V_SCAM, V_AIERR };
+    static volatile bool     g_guarding    = false;
+    static volatile uint32_t g_session     = 0;      // bumps on every guard-on
+    static volatile bool     g_wsConnected = false;
+    static volatile bool     g_streamAudio = false;  // mic callback writes to buffer
+    static volatile int      g_gain        = 8;      // digital mic gain
+    static volatile uint32_t g_audioDropped = 0;     // bytes lost to a full buffer
+    static volatile uint32_t g_audioSent   = 0;      // bytes sent to Deepgram
+    static StreamBufferHandle_t g_audioBuf = nullptr;
+    static QueueHandle_t     g_eventQ      = nullptr; // char* lines, printed by loop()
+    static SemaphoreHandle_t g_mtx         = nullptr; // guards strings below
+    static String            g_transcript;            // rolling window
+    static uint32_t          g_txtVersion  = 0;       // bumps when text is added
+    static volatile uint8_t  g_verdict     = V_NONE;
+    static String            g_reason;
+    static volatile bool     g_scamLatched = false;
+    static volatile uint32_t g_aiCalls = 0, g_aiLastMs = 0;
+    static volatile int      g_aiLastHttp  = 0;
+
+    // ---------------- events (JSON lines, printed from loop only) ----------------
+    // Tasks never touch Serial: the generated firmware prints its own events from
+    // loop() in several print() calls, so whole lines are queued and loop prints them.
+    static void sgEmit(const char* type, const char* key, JsonVariantConst value) {
+      JsonDocument doc;
+      doc["type"] = "event";
+      JsonObject p = doc["payload"].to<JsonObject>();
+      p["event_type"] = type;
+      p["key"] = key;
+      p["value"] = value;
+      p["source"] = "guardian";
+      size_t len = measureJson(doc);
+      char* line = (char*)malloc(len + 2);
+      if (!line) return;
+      serializeJson(doc, line, len + 1);
+      line[len] = '\n'; line[len + 1] = 0;
+      if (!g_eventQ || xQueueSend(g_eventQ, &line, 0) != pdTRUE) free(line);
+    }
+    static void sgEmitStr(const char* type, const char* key, const String& v) {
+      JsonDocument d; d.set(v.c_str()); sgEmit(type, key, d.as<JsonVariantConst>());
+    }
+    static void sgEmitDoc(const char* type, const char* key, JsonDocument& d) {
+      sgEmit(type, key, d.as<JsonVariantConst>());
+    }
+    static void sgFlushEvents() {
+      char* line;
+      for (int i = 0; i < 8 && xQueueReceive(g_eventQ, &line, 0) == pdTRUE; i++) {
+        Serial.write((const uint8_t*)line, strlen(line));
+        free(line);
+      }
+    }
+
+    // ---------------- microphone tap (runs on the mic task, core 0) ----------------
+    static int32_t g_dcQ8 = 0;
+    static int16_t g_micOut[512];
+    static void onMic(const int16_t* s, int count, void*) {
+      if (!g_streamAudio || !g_audioBuf) return;
+      int gain = g_gain;
+      while (count > 0) {
+        int n = count > 512 ? 512 : count;
+        for (int i = 0; i < n; i++) {
+          int32_t x = s[i];
+          g_dcQ8 += ((x << 8) - g_dcQ8) >> 9;            // DC tracker (~30 ms)
+          int32_t y = (x - (g_dcQ8 >> 8)) * gain;
+          if (y > 32767) y = 32767; else if (y < -32768) y = -32768;
+          g_micOut[i] = (int16_t)y;                       // ESP32 is little-endian
+        }
+        size_t want = (size_t)n * 2;
+        size_t put = xStreamBufferSend(g_audioBuf, g_micOut, want, 0);
+        if (put < want) g_audioDropped += (want - put);
+        s += n; count -= n;
+      }
+    }
+
+    // ---------------- Deepgram WebSocket (own task) ----------------
+    static WebSocketsClient ws;
+    static String g_dgAuthHeader;
+
+    static void sgAppendTranscript(const char* text, const char* lang) {
+      xSemaphoreTake(g_mtx, portMAX_DELAY);
+      if (g_transcript.length()) g_transcript += ' ';
+      g_transcript += text;
+      if (g_transcript.length() > SG_TRANSCRIPT_MAX) {
+        int cut = g_transcript.indexOf(' ', g_transcript.length() - SG_TRANSCRIPT_MAX * 3 / 4);
+        g_transcript.remove(0, cut < 0 ? g_transcript.length() - SG_TRANSCRIPT_MAX * 3 / 4 : cut + 1);
+      }
+      g_txtVersion++;
+      xSemaphoreGive(g_mtx);
+      JsonDocument d; d["text"] = text; if (lang) d["lang"] = lang;
+      sgEmitDoc("state", "transcript", d);
+    }
+
+    static void sgOnWs(WStype_t type, uint8_t* payload, size_t length) {
+      switch (type) {
+        case WStype_CONNECTED:
+          g_wsConnected = true;
+          xStreamBufferReset(g_audioBuf);
+          g_streamAudio = true;
+          sgEmitStr("state", "ws", "connected");
+          break;
+        case WStype_DISCONNECTED:
+          if (g_wsConnected) sgEmitStr("state", "ws", "disconnected");
+          g_wsConnected = false;
+          g_streamAudio = false;
+          break;
+        case WStype_ERROR:
+          sgEmitStr("log", "error", String("ws: ") + (payload && length ? String((const char*)payload).substring(0, 120) : String("error")));
+          break;
+        case WStype_TEXT: {
+          JsonDocument filter;
+          filter["type"] = true;
+          filter["is_final"] = true;
+          filter["channel"]["alternatives"][0]["transcript"] = true;
+          filter["channel"]["alternatives"][0]["languages"] = true;
+          filter["err_msg"] = true;
+          filter["description"] = true;
+          JsonDocument doc;
+          if (deserializeJson(doc, payload, length, DeserializationOption::Filter(filter))) {
+            sgEmitStr("log", "error", "dg: bad json");
+            break;
+          }
+          const char* t = doc["type"] | "";
+          if (strcmp(t, "Results") == 0) {
+            if (!(doc["is_final"] | false)) break;
+            const char* text = doc["channel"]["alternatives"][0]["transcript"] | "";
+            if (!*text) break;                              // empty finals are common
+            const char* lang = doc["channel"]["alternatives"][0]["languages"][0] | (const char*)nullptr;
+            sgAppendTranscript(text, lang);
+          } else if (strcmp(t, "Metadata") != 0) {
+            const char* em = doc["err_msg"] | (const char*)nullptr;
+            if (!em) em = doc["description"] | "";
+            String m = String("dg ") + t + ": " + em;
+            sgEmitStr("log", "ws_msg", m.substring(0, 160));
+          }
+          break;
+        }
+        default: break;
+      }
+    }
+
+    static void sgWsTask(void*) {
+      static uint8_t chunk[SG_AUDIO_CHUNK];
+      bool started = false;
+      uint32_t closeAt = 0, lastSend = 0, lastKA = 0;
+      for (;;) {
+        uint32_t now = millis();
+        bool wifiOk = WiFi.status() == WL_CONNECTED;
+        if (g_guarding && wifiOk && !started) {
+          // No CA and no fingerprint: the library calls setInsecure(). Empty
+          // protocol: no Sec-WebSocket-Protocol header.
+          ws.beginSSL(SG_DG_HOST, 443, SG_DG_PATH, "", "");
+          ws.onEvent(sgOnWs);
+          ws.setExtraHeaders(g_dgAuthHeader.c_str());
+          ws.setReconnectInterval(3000);
+          started = true; closeAt = 0; lastSend = lastKA = now;
+          sgEmitStr("state", "ws", "connecting");
+        }
+        if (started && (!g_guarding || !wifiOk)) {
+          if (g_wsConnected && closeAt == 0) {
+            g_streamAudio = false;
+            ws.sendTXT("{\"type\":\"CloseStream\"}");
+            closeAt = now ? now : 1;
+            sgEmitStr("state", "ws", "closing");
+          }
+          if (!g_wsConnected || now - closeAt > 1500) {
+            ws.disconnect();
+            started = false; closeAt = 0;
+            g_wsConnected = false; g_streamAudio = false;
+            sgEmitStr("state", "ws", "closed");
+          }
+        }
+        if (started) ws.loop();
+        if (started && g_wsConnected && g_guarding && closeAt == 0) {
+          // At most two frames per pass: ws.loop() must keep running to read
+          // Deepgram's results and to notice guard-off / disconnects.
+          for (int k = 0; k < 2 && xStreamBufferBytesAvailable(g_audioBuf) >= SG_AUDIO_CHUNK; k++) {
+            size_t n = xStreamBufferReceive(g_audioBuf, chunk, SG_AUDIO_CHUNK, 0);
+            if (!n) break;
+            if (!ws.sendBIN(chunk, n)) { sgEmitStr("log", "error", "ws: send failed"); break; }
+            g_audioSent += n; lastSend = millis();
+          }
+          now = millis();
+          if (now - lastSend > 4000 && now - lastKA > 4000) {   // audio stalled
+            ws.sendTXT("{\"type\":\"KeepAlive\"}");
+            lastKA = now;
+          }
+        }
+        vTaskDelay(pdMS_TO_TICKS(started ? 3 : 50));
+      }
+    }
+
+    // ---------------- Claude verdicts (own task) ----------------
+    static uint8_t sgParseVerdict(const String& text, String& reason) {
+      int a = text.indexOf('{'), b = text.lastIndexOf('}');
+      if (a < 0 || b <= a) return V_AIERR;
+      JsonDocument v;
+      if (deserializeJson(v, text.substring(a, b + 1))) return V_AIERR;
+      String verdict = v["verdict"] | "";
+      verdict.toLowerCase();
+      reason = v["reason"] | "";
+      if (verdict == "scam") return V_SCAM;
+      if (verdict == "safe") return V_SAFE;
+      if (verdict == "unsure") return V_UNSURE;
+      return V_AIERR;
+    }
+
+    static void sgAiTask(void*) {
+      static WiFiClientSecure tls;
+      tls.setInsecure();                 // hackathon: no certificate pinning
+      uint32_t lastVersion = 0, lastCall = 0, lastSession = 0;
+      for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(200));
+        uint32_t session = g_session;
+        if (session != lastSession) { lastSession = session; lastVersion = 0; lastCall = 0; }
+        if (!g_guarding || g_scamLatched || WiFi.status() != WL_CONNECTED) continue;
+        if (lastCall && millis() - lastCall < SG_AI_PERIOD_MS) continue;
+        String text; uint32_t ver;
+        xSemaphoreTake(g_mtx, portMAX_DELAY);
+        ver = g_txtVersion; text = g_transcript;
+        xSemaphoreGive(g_mtx);
+        if (ver == lastVersion || text.length() == 0) continue;
+        if (!tls.connected() && ESP.getMaxAllocHeap() < 20000) {   // TLS needs ~17 KB blocks
+          lastCall = millis();
+          sgEmitStr("log", "error", String("ai: low heap, skipped (max block ") + ESP.getMaxAllocHeap() + ")");
+          continue;
+        }
+        lastVersion = ver; lastCall = millis();
+
+        JsonDocument req;
+        req["model"] = SG_CLAUDE_MODEL;
+        req["max_tokens"] = 120;
+        req["thinking"]["type"] = "disabled";
+        req["system"] = SG_SYSTEM_PROMPT;
+        JsonObject m = req["messages"].add<JsonObject>();
+        m["role"] = "user";
+        m["content"] = String("Live call transcript so far:\n") + text;
+        String body; serializeJson(req, body);
+        req.clear();
+
+        uint32_t t0 = millis();
+        HTTPClient http;
+        http.setTimeout(15000);
+        http.setConnectTimeout(8000);
+        int code = -1; String resp;
+        if (http.begin(tls, SG_CLAUDE_URL)) {
+          http.addHeader("content-type", "application/json");
+          http.addHeader("x-api-key", SG_ANTHROPIC_API_KEY);
+          http.addHeader("anthropic-version", "2023-06-01");
+          code = http.POST(body);
+          if (code > 0) resp = http.getString();
+          http.end();
+        }
+        body = String();
+        uint32_t ms = millis() - t0;
+        g_aiCalls++; g_aiLastMs = ms; g_aiLastHttp = code;
+
+        String reason, modelText; uint8_t v = V_AIERR;
+        if (code == 200) {
+          JsonDocument filter;
+          filter["content"][0]["type"] = true;
+          filter["content"][0]["text"] = true;
+          JsonDocument r;
+          if (!deserializeJson(r, resp, DeserializationOption::Filter(filter))) {
+            for (JsonObject c : r["content"].as<JsonArray>()) {
+              if (strcmp(c["type"] | "", "text") == 0) { modelText = c["text"] | ""; break; }
+            }
+            v = sgParseVerdict(modelText, reason);
+            if (v == V_AIERR) reason = "bad reply";
+          } else reason = "bad json";
+        } else {
+          reason = code > 0 ? String("HTTP ") + code : String("net ") + code;
+        }
+        if (session != g_session || !g_guarding) continue;   // guard toggled meanwhile
+
+        xSemaphoreTake(g_mtx, portMAX_DELAY);
+        if (!g_scamLatched) {
+          if (v == V_AIERR && (g_verdict == V_SAFE || g_verdict == V_UNSURE || g_verdict == V_AIERR || g_verdict == V_NONE)) {
+            g_verdict = V_AIERR; g_reason = reason;
+          } else if (v != V_AIERR) {
+            g_verdict = v; g_reason = reason;
+            if (v == V_SCAM) g_scamLatched = true;
+          }
+        }
+        xSemaphoreGive(g_mtx);
+
+        static const char* names[] = {"none", "safe", "unsure", "scam", "ai_error"};
+        JsonDocument d;
+        d["verdict"] = names[v];
+        d["reason"] = reason;
+        d["latched"] = (bool)g_scamLatched;
+        d["http"] = code;
+        d["ms"] = ms;
+        d["chars"] = text.length();
+        if (v == V_AIERR && resp.length()) d["detail"] = resp.substring(0, 200);
+        sgEmitDoc("state", "verdict", d);
+      }
+    }
+
+    // ---------------- display helpers ----------------
+    // The built-in font has no æøå: transliterate UTF-8 for the screen only.
+    static String sgAscii(const String& in) {
+      String out; out.reserve(in.length());
+      for (size_t i = 0; i < in.length(); i++) {
+        uint8_t c = in[i];
+        if (c < 0x80) { out += (char)c; continue; }
+        if (c == 0xC3 && i + 1 < in.length()) {
+          uint8_t d = in[++i];
+          switch (d) {
+            case 0xA6: out += "ae"; break; case 0x86: out += "AE"; break;
+            case 0xB8: out += 'o'; break;  case 0x98: out += 'O'; break;
+            case 0xA5: out += 'a'; break;  case 0x85: out += 'A'; break;
+            case 0xA4: out += 'a'; break;  case 0xB6: out += 'o'; break;
+            case 0xA9: out += 'e'; break;  case 0xBC: out += 'u'; break;
+            default: out += '?';
+          }
+        } else if (c >= 0xC0) {
+          out += '?';
+          while (i + 1 < in.length() && ((uint8_t)in[i + 1] & 0xC0) == 0x80) i++;
+        }
+      }
+      return out;
+    }
+
+    // Word-wrap `text` into at most `maxLines` lines of `cols` chars; drawn at y.
+    static void sgDrawWrapped(const String& text, int16_t y, int maxLines, uint16_t color, bool tail) {
+      const int cols = 26;
+      String lines[6]; int n = 0;
+      String rest = text; rest.trim();
+      while (rest.length() && n < 6) {
+        if ((int)rest.length() <= cols) { lines[n++] = rest; break; }
+        int cut = rest.lastIndexOf(' ', cols);
+        if (cut <= 0) cut = cols;
+        lines[n++] = rest.substring(0, cut);
+        rest = rest.substring(cut); rest.trim();
+      }
+      int start = (tail && n > maxLines) ? n - maxLines : 0;
+      for (int i = start, row = 0; i < n && row < maxLines; i++, row++)
+        st7735_tft.displayText(lines[i].c_str(), 2, y + row * 9, 1, color);
+    }
+  setup: |
+    g_audioBuf = xStreamBufferCreate(SG_AUDIO_BUF_BYTES, SG_AUDIO_CHUNK);
+    g_eventQ = xQueueCreate(32, sizeof(char*));
+    g_mtx = xSemaphoreCreateMutex();
+    g_dgAuthHeader = String("Authorization: Token ") + SG_DEEPGRAM_API_KEY;
+    g_transcript.reserve(SG_TRANSCRIPT_MAX + 400);
+    WiFi.mode(WIFI_STA);
+    WiFi.setSleep(false);            // modem sleep adds latency to the audio stream
+    WiFi.setAutoReconnect(true);
+    microphone.onAudio(onMic, nullptr);
+    xTaskCreatePinnedToCore(sgWsTask, "sg_ws", 8192, nullptr, 1, nullptr, 0);
+    xTaskCreatePinnedToCore(sgAiTask, "sg_ai", 12288, nullptr, 1, nullptr, 0);
+    led_green.clear();  led_green.show();
+    led_yellow.clear(); led_yellow.show();
+    led_red.clear();    led_red.show();
+  loop: |
+    static EveryTimer frame, lights, stats;
+    static uint32_t wifiBeganAt = 0;
+    static int lastWifi = -1;
+
+    // ---- guard on/off: the button (edge, used only here) or the laptop ----
+    int want = -1;
+    if (button.wasPressed()) want = g_guarding ? 0 : 1;
+    if (atech_action == "guard") {
+      String v = atech_value; v.trim(); v.toLowerCase();
+      if (v == "on" || v == "1" || v == "true") want = 1;
+      else if (v == "off" || v == "0" || v == "false") want = 0;
+      else if (v == "" || v == "toggle") want = g_guarding ? 0 : 1;
+      else atechFail("value must be on, off or toggle");
+      atechDone();
+    }
+    if (atech_action == "gain") {
+      int g = atech_value.toInt();
+      if (g >= 1 && g <= 64) g_gain = g; else atechFail("gain must be 1..64");
+      atechDone();
+    }
+    if (want >= 0 && (bool)want != g_guarding) {
+      if (want) {
+        xSemaphoreTake(g_mtx, portMAX_DELAY);
+        g_transcript = ""; g_txtVersion = 0;
+        g_verdict = V_NONE; g_reason = ""; g_scamLatched = false;
+        xSemaphoreGive(g_mtx);
+        g_session++;
+        g_guarding = true;
+        if (WiFi.status() != WL_CONNECTED) {
+          if (strlen(SG_WIFI_PASSWORD)) WiFi.begin(SG_WIFI_SSID, SG_WIFI_PASSWORD);
+          else WiFi.begin(SG_WIFI_SSID);           // open network
+          wifiBeganAt = millis();
+        }
+      } else {
+        g_guarding = false;
+      }
+      sgEmitStr("state", "guard", g_guarding ? "on" : "off");
+    }
+
+    // ---- WiFi watchdog (non-blocking) ----
+    int ws_ = WiFi.status();
+    if (ws_ != lastWifi) {
+      lastWifi = ws_;
+      JsonDocument d;
+      d["status"] = ws_ == WL_CONNECTED ? "connected" : (ws_ == WL_NO_SSID_AVAIL ? "no_ssid" : (ws_ == WL_CONNECT_FAILED ? "failed" : "down"));
+      d["code"] = ws_;
+      if (ws_ == WL_CONNECTED) { d["ip"] = WiFi.localIP().toString(); d["rssi"] = WiFi.RSSI(); }
+      sgEmitDoc("state", "wifi", d);
+    }
+    if (g_guarding && ws_ != WL_CONNECTED && millis() - wifiBeganAt > 15000) {
+      WiFi.disconnect();
+      if (strlen(SG_WIFI_PASSWORD)) WiFi.begin(SG_WIFI_SSID, SG_WIFI_PASSWORD);
+      else WiFi.begin(SG_WIFI_SSID);
+      wifiBeganAt = millis();
+      sgEmitStr("log", "wifi_retry", SG_WIFI_SSID);
+    }
+
+    // ---- traffic light ----
+    if (lights.ready(40)) {
+      uint8_t v = g_verdict;
+      led_green.clear(); led_yellow.clear(); led_red.clear();
+      if (g_guarding) {
+        if (v == V_SCAM)        led_red.setAll(255, 0, 0);
+        else if (v == V_SAFE)   led_green.setAll(0, 255, 0);
+        else if (v == V_UNSURE || v == V_AIERR) led_yellow.setAll(255, 150, 0);
+        else if (g_wsConnected) {                     // listening: slow blue breathe
+          float ph = (millis() % 2400) / 2400.0f;
+          float k = 0.5f - 0.5f * cosf(ph * 2.0f * PI);
+          led_yellow.setAll(0, 0, (uint8_t)(10 + 110 * k));
+        } else if ((millis() / 400) % 2) {            // connecting: blink centre
+          led_yellow.setPixel(4, 60, 60, 60);
+        }
+      }
+      led_green.show(); led_yellow.show(); led_red.show();
+    }
+
+    // ---- screen ----
+    if (frame.ready(250)) {
+      st7735_tft.clear();
+      if (!g_guarding) {
+        st7735_tft.displayText("Scam Guardian", 2, 4, 1, ST7735_TFT::COLOR_CYAN);
+        st7735_tft.displayText("Press button", 8, 28, 2, ST7735_TFT::COLOR_WHITE);
+        st7735_tft.displayText("to guard", 32, 50, 2, ST7735_TFT::COLOR_WHITE);
+      } else {
+        uint8_t v = g_verdict;
+        const char* big = "LISTENING"; uint16_t col = ST7735_TFT::COLOR_CYAN;
+        if (WiFi.status() != WL_CONNECTED)   { big = "WiFi..."; col = ST7735_TFT::COLOR_WHITE; }
+        else if (!g_wsConnected && v == V_NONE) { big = "CONNECT"; col = ST7735_TFT::COLOR_WHITE; }
+        if (v == V_SCAM)   { big = "SCAM!";  col = ST7735_TFT::COLOR_RED; }
+        if (v == V_SAFE)   { big = "SAFE";   col = ST7735_TFT::COLOR_GREEN; }
+        if (v == V_UNSURE) { big = "UNSURE"; col = ST7735_TFT::COLOR_YELLOW; }
+        if (v == V_AIERR)  { big = "AI err"; col = ST7735_TFT::COLOR_YELLOW; }
+        st7735_tft.displayText(big, 2, 1, 2, col);
+        String st = String(WiFi.status() == WL_CONNECTED ? "W+" : "W-") + (g_wsConnected ? " STT+" : " STT-");
+        st7735_tft.displayText(st.c_str(), 160 - st7735_tft.textWidth(st.c_str()) - 2, 1, 1, ST7735_TFT::COLOR_WHITE);
+        String reason, tail;
+        xSemaphoreTake(g_mtx, portMAX_DELAY);
+        reason = g_reason;
+        int from = (int)g_transcript.length() - 110;
+        tail = g_transcript.substring(from < 0 ? 0 : from);
+        xSemaphoreGive(g_mtx);
+        if (from > 0) { int sp = tail.indexOf(' '); if (sp >= 0) tail = tail.substring(sp + 1); }
+        sgDrawWrapped(sgAscii(reason), 19, 2, col, false);
+        st7735_tft.drawLine(0, 38, 159, 38, ST7735_TFT::COLOR_BLUE);
+        sgDrawWrapped(tail.length() ? sgAscii(tail) : String("(waiting for speech)"), 42, 4, ST7735_TFT::COLOR_WHITE, true);
+      }
+      st7735_tft.display();
+    }
+
+    // ---- periodic health event ----
+    if (stats.ready(g_guarding ? 5000 : 30000)) {
+      JsonDocument d;
+      d["guarding"] = (bool)g_guarding;
+      d["free_heap"] = ESP.getFreeHeap();
+      d["min_free_heap"] = ESP.getMinFreeHeap();
+      d["max_block"] = ESP.getMaxAllocHeap();
+      d["audio_buf"] = (uint32_t)xStreamBufferBytesAvailable(g_audioBuf);
+      d["audio_sent"] = (uint32_t)g_audioSent;
+      d["audio_dropped"] = (uint32_t)g_audioDropped;
+      d["ai_calls"] = (uint32_t)g_aiCalls;
+      d["ai_ms"] = (uint32_t)g_aiLastMs;
+      d["mic_level"] = microphone.getSoundLevel();
+      sgEmitDoc("sensor", "health", d);
+    }
+
+    sgFlushEvents();
