@@ -125,21 +125,46 @@ class BoardMonitor(
             wsLive = false
             updateConnection()
             failures++
-            delay(if (refusedToken) 30_000 else backoffMs(failures))
+            delay(wsRetryDelay(refusedToken, failures))
         }
+    }
+
+    // During a call the board has little memory left for the local API (two TLS sessions run),
+    // so the app asks less often then, and not at all for a live socket the board refused.
+    private fun wsRetryDelay(refusedToken: Boolean, failures: Int): Long {
+        val live = _live.value
+        return when {
+            refusedToken -> 30_000
+            "ws_server" in live.degraded -> WS_RETRY_LOW_MEMORY_MS
+            live.guarding -> maxOf(backoffMs(failures), WS_RETRY_CALL_MS)
+            else -> backoffMs(failures)
+        }
+    }
+
+    private fun pollDelay(): Long = when {
+        wsLive && _live.value.guarding -> POLL_LIVE_CALL_MS   // health events every 5 s keep contact
+        wsLive -> POLL_LIVE_MS
+        _live.value.guarding -> POLL_CALL_MS
+        else -> POLL_FALLBACK_MS
     }
 
     private suspend fun pollLoop(c: BoardClient) {
         var first = true
         var lastSeenSeq = -1L
+        var lastSyncAt = 0L
         while (true) {
             try {
                 val s = c.status()
                 contact()
                 unauthorized = false
                 setLive(_live.value.withStatus(s))
-                // On start, and while the WebSocket is down, pick up new events from /events.
-                if (first || (!wsLive && s.lastSeq != lastSeenSeq)) sync(c)
+                // On start, and while the WebSocket is down, pick up new events from /events
+                // (during a call at most every SYNC_CALL_MS: /status already has the verdict).
+                val syncDue = !s.guarding || clock() - lastSyncAt >= SYNC_CALL_MS
+                if (first || (!wsLive && s.lastSeq != lastSeenSeq && syncDue)) {
+                    sync(c)
+                    lastSyncAt = clock()
+                }
                 first = false
                 lastSeenSeq = s.lastSeq
             } catch (e: CancellationException) {
@@ -152,7 +177,7 @@ class BoardMonitor(
                 contact() // it answered, just not with a status (low memory, 429, ...)
             }
             updateConnection()
-            delay(if (wsLive) POLL_LIVE_MS else POLL_FALLBACK_MS)
+            delay(pollDelay())
         }
     }
 
@@ -246,7 +271,12 @@ class BoardMonitor(
     companion object {
         const val OFFLINE_AFTER_MS = 30_000L
         const val POLL_LIVE_MS = 15_000L
+        const val POLL_LIVE_CALL_MS = 30_000L
         const val POLL_FALLBACK_MS = 5_000L
+        const val POLL_CALL_MS = 10_000L
+        const val SYNC_CALL_MS = 30_000L
+        const val WS_RETRY_CALL_MS = 30_000L
+        const val WS_RETRY_LOW_MEMORY_MS = 60_000L
         const val LOCATE_EVERY_MS = 60_000L
 
         fun backoffMs(failures: Int): Long = (1_000L shl (failures - 1).coerceIn(0, 4)).coerceAtMost(15_000)
