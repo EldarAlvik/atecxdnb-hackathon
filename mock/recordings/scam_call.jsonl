@@ -1,0 +1,11 @@
+{"type": "state", "key": "guard", "value": "on", "module_type": "guardian", "received_at": 1762352000.0}
+{"type": "state", "key": "ws", "value": "connecting", "module_type": "guardian", "received_at": 1762352000.4}
+{"type": "state", "key": "ws", "value": "connected", "module_type": "guardian", "received_at": 1762352002.0}
+{"type": "state", "key": "transcript", "value": {"text": "Hei, dette er Martin fra DNB sin sikkerhetsavdeling.", "lang": "no"}, "module_type": "guardian", "received_at": 1762352006.1}
+{"type": "state", "key": "verdict", "value": {"verdict": "unsure", "reason": "Påstått bankansatt, uklart", "latched": false, "http": 200, "ms": 1380, "chars": 52}, "module_type": "guardian", "received_at": 1762352008.3}
+{"type": "sensor", "key": "health", "value": {"guarding": true, "free_heap": 121344, "min_free_heap": 96120, "max_block": 69620, "audio_buf": 1600, "audio_sent": 352000, "audio_dropped": 0, "ai_calls": 1, "ai_ms": 1380, "mic_level": 1830}, "module_type": "guardian", "received_at": 1762352011.3}
+{"type": "state", "key": "transcript", "value": {"text": "Vi ser at noen har forsøkt å logge inn på nettbanken din fra utlandet.", "lang": "no"}, "module_type": "guardian", "received_at": 1762352012.8}
+{"type": "state", "key": "transcript", "value": {"text": "For å stoppe overføringen må du lese opp koden fra BankID-appen.", "lang": "no"}, "module_type": "guardian", "received_at": 1762352016.2}
+{"type": "state", "key": "verdict", "value": {"verdict": "scam", "reason": "Ber om BankID-kode", "latched": true, "http": 200, "ms": 1612, "chars": 187}, "module_type": "guardian", "received_at": 1762352018.1}
+{"type": "state", "key": "transcript", "value": {"text": "Det er veldig viktig at du ikke legger på.", "lang": "no"}, "module_type": "guardian", "received_at": 1762352020.7}
+{"type": "sensor", "key": "health", "value": {"guarding": true, "free_heap": 119876, "min_free_heap": 95040, "max_block": 69620, "audio_buf": 3200, "audio_sent": 672000, "audio_dropped": 0, "ai_calls": 2, "ai_ms": 1612, "mic_level": 2210}, "module_type": "guardian", "received_at": 1762352023.7}

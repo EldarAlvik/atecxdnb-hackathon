@@ -6,3 +6,6 @@ requires-python = ">=3.12"
 dependencies = [
     "atech>=1.0.0a12",
 ]
+
+[dependency-groups]
+mock = ["aiohttp>=3.10"]

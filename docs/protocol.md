@@ -225,7 +225,8 @@ Answers `{"setup":true}`, then restarts the board into BLE setup mode.
 ## 3. WebSocket (port 81)
 
 `ws://guardian.local:81/?token=<token>` (or the `Authorization` header on the
-upgrade request). A wrong token closes the socket right after it opens. The board
+upgrade request). A wrong token is refused: either the upgrade fails with HTTP
+401, or the socket is closed right after it opens (the client must handle both). The board
 takes at most **2** clients; a third is closed.
 
 The board's first message:
