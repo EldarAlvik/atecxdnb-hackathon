@@ -11,14 +11,10 @@ a scam. The verdict lights a traffic light and shows on the screen.
 |---|---|
 | Microphone | 5, 6 |
 | Button | 7 |
-| Light grid: green (safe) | 9 |
-| Light grid: yellow (unsure / AI error) | 10 |
-| Light grid: red (scam) | 11 (the slot just above the Reset button) |
+| Light grid (green safe / yellow unsure or AI error / red scam) | 11 (the slot just above the Reset button) |
 | Screen 160x80 | 13, 14 |
 
-Port 12 is the Reset button on this board and cannot hold a module. If a colour
-lights the wrong grid, swap the `port:` numbers of `led_green` / `led_yellow` /
-`led_red` in `project.yaml`.
+Port 12 is the Reset button on this board and cannot hold a module.
 
 ## Secrets
 
@@ -54,7 +50,7 @@ uv run atech check
 - **Button** toggles guarding. When idle, the screen says "Press button to guard"
   and the lights are off.
 - **Guarding:** WiFi connects ("WiFi..."), then the Deepgram stream ("CONNECT"),
-  then "LISTENING" with a breathing blue yellow-grid. Each verdict lights one grid:
+  then "LISTENING" with a breathing blue grid. Each verdict colours the grid:
   green = safe, yellow = unsure, red = scam. **Scam stays red until guarding is
   turned off.** "AI err" (yellow) means the Claude call failed; it retries.
 - **Green expires:** a safe verdict older than 20 s turns yellow ("No recent check")
