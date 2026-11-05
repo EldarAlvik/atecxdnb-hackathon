@@ -16,6 +16,9 @@ static int      g_segCount = 0;
 static int      g_segLines = 0;                // lines in the newest segment
 static uint32_t g_logLastSeq = 0;
 static uint32_t g_logEvents  = 0;              // events on disk (approximate)
+// One line buffer for appending and for reading back: both run on the API task
+// only, and the /events callback never appends.
+static char     g_logBuf[SG_LOG_MAX_LINE + 32];
 
 static void sgSegPath(uint32_t start, char* buf, size_t cap) {
   snprintf(buf, cap, "/ev/%010lu.l", (unsigned long)start);
@@ -86,8 +89,8 @@ static bool sgLogAppend(uint32_t seq, const char* json, size_t len) {
   sgSegPath(g_segStart[g_segCount - 1], path, sizeof path);
   // One write per record: LittleFS commits an append on close, so a power cut
   // loses the whole record rather than leaving half of one.
-  static char rec[SG_LOG_MAX_LINE + 16];          // API task only
-  int pl = snprintf(rec, sizeof rec, "%lu\t", (unsigned long)seq);
+  char* rec = g_logBuf;
+  int pl = snprintf(rec, sizeof g_logBuf, "%lu\t", (unsigned long)seq);
   memcpy(rec + pl, json, len);
   rec[pl + len] = '\n';
   File f = LittleFS.open(path, "a");
@@ -104,7 +107,7 @@ static bool sgLogAppend(uint32_t seq, const char* json, size_t len) {
 template <typename F>
 static bool sgLogForEach(uint32_t since, F fn) {
   if (!g_logOk) return true;
-  static char line[SG_LOG_MAX_LINE + 32];        // API task only
+  char* line = g_logBuf;                          // shared with sgLogAppend: fn must not append
   char path[32];
   for (int s = 0; s < g_segCount; s++) {
     // Skip whole segments that end at or before `since`.
@@ -113,7 +116,7 @@ static bool sgLogForEach(uint32_t since, F fn) {
     File f = LittleFS.open(path, "r");
     if (!f) continue;
     while (f.available()) {
-      size_t n = f.readBytesUntil('\n', line, sizeof line - 1);
+      size_t n = f.readBytesUntil('\n', line, sizeof g_logBuf - 1);
       line[n] = 0;
       char* tab = strchr(line, '\t');
       // Skip anything that is not a whole record, so one bad line cannot break

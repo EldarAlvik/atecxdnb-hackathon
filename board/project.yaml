@@ -54,7 +54,7 @@ code:
     static const char* SG_DG_HOST = "api.deepgram.com";
     static const char* SG_CLAUDE_URL   = "https://api.anthropic.com/v1/messages";
     static const char* SG_CLAUDE_MODEL = "claude-haiku-5-5";
-    static const size_t   SG_AUDIO_BUF_BYTES = 16000;  // 0.5 s of 16 kHz 16-bit mono (heap is tight)
+    static const size_t   SG_AUDIO_BUF_BYTES = 9600;   // 0.3 s of 16 kHz 16-bit mono (heap is tight; watch audio_dropped)
     static const size_t   SG_AUDIO_CHUNK     = 3200;   // 100 ms per WebSocket frame
     static const size_t   SG_TRANSCRIPT_MAX  = 2400;   // rolling window (bytes)
     static const size_t   SG_SEGMENT_MAX     = 800;    // one Deepgram segment, after redaction
@@ -91,6 +91,7 @@ code:
     static volatile int      g_gain        = 8;      // digital mic gain
     static volatile uint32_t g_audioDropped = 0;     // bytes lost to a full buffer
     static volatile uint32_t g_audioSent   = 0;      // bytes sent to Deepgram
+    static TaskHandle_t      g_taskApi = nullptr, g_taskWs = nullptr, g_taskAi = nullptr;  // for stack_free in health
     static StreamBufferHandle_t g_audioBuf = nullptr;
     static QueueHandle_t     g_eventQ      = nullptr; // event lines, printed by loop()
     static QueueHandle_t     g_netQ        = nullptr; // the same lines, to the API task
@@ -803,6 +804,12 @@ code:
         d["ws_clients"] = (int)g_wsClientCount;
         d["log_events"] = g_logEvents;
         d["degraded"] = g_degraded;
+        // Smallest free stack each task has had so far (bytes), to size the stacks.
+        JsonObject sf = d["stack_free"].to<JsonObject>();
+        sf["loop"] = uxTaskGetStackHighWaterMark(nullptr);
+        if (g_taskApi) sf["api"] = uxTaskGetStackHighWaterMark(g_taskApi);
+        if (g_taskWs)  sf["ws"]  = uxTaskGetStackHighWaterMark(g_taskWs);
+        if (g_taskAi)  sf["ai"]  = uxTaskGetStackHighWaterMark(g_taskAi);
         sgEmitDoc("sensor", "health", d);
       }
     }
@@ -847,7 +854,7 @@ code:
     WiFi.mode(WIFI_STA);
     // The API task writes the event log in both modes; it starts the servers once
     // Wi-Fi is up in normal mode.
-    xTaskCreatePinnedToCore(sgApiTask, "sg_api", 8192, nullptr, 1, nullptr, 1);
+    xTaskCreatePinnedToCore(sgApiTask, "sg_api", 8192, nullptr, 1, &g_taskApi, 1);
     if (g_setupMode) {
       sgBleBegin();
     } else {
@@ -858,8 +865,8 @@ code:
       WiFi.setAutoReconnect(true);
       sgWifiBegin(sgWifiPick(0));
       microphone.onAudio(onMic, nullptr);
-      xTaskCreatePinnedToCore(sgWsTask, "sg_ws", 8192, nullptr, 1, nullptr, 0);
-      xTaskCreatePinnedToCore(sgAiTask, "sg_ai", 12288, nullptr, 1, nullptr, 0);
+      xTaskCreatePinnedToCore(sgWsTask, "sg_ws", 8192, nullptr, 1, &g_taskWs, 0);
+      xTaskCreatePinnedToCore(sgAiTask, "sg_ai", 12288, nullptr, 1, &g_taskAi, 0);
     }
   loop: |
     // ---- USB actions (atech send ...) ----

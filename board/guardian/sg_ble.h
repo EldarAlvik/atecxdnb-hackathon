@@ -30,7 +30,8 @@ static volatile uint16_t g_bleConn = 0xFFFF;  // its connection handle
 static BLECharacteristic* g_chStatus = nullptr;
 static BLECharacteristic* g_chNetworks = nullptr;
 static portMUX_TYPE g_bleMux = portMUX_INITIALIZER_UNLOCKED;
-static char g_bleCmd[600];
+static const size_t SG_BLE_CMD_MAX = 600;
+static char* g_bleCmd = nullptr;             // allocated by sgBleBegin (setup mode only)
 static volatile bool g_bleCmdPending = false;
 static uint8_t  g_setupPhase = SP_WAITING;
 static uint32_t g_setupStartedAt = 0, g_phaseAt = 0;
@@ -62,7 +63,7 @@ class SgBleSecurityCb : public BLESecurityCallbacks {
 class SgBleCommandCb : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic* c) override {
     String v = c->getValue();
-    if (v.length() == 0 || v.length() >= sizeof g_bleCmd) return;
+    if (!g_bleCmd || v.length() == 0 || v.length() >= SG_BLE_CMD_MAX) return;
     portENTER_CRITICAL(&g_bleMux);
     memcpy(g_bleCmd, v.c_str(), v.length() + 1);
     g_bleCmdPending = true;
@@ -116,6 +117,7 @@ static void sgSetupFail(const char* error, int reason = 0) {
 
 static void sgBleBegin() {
   g_passkey = 100000 + esp_random() % 900000;
+  g_bleCmd = (char*)calloc(1, SG_BLE_CMD_MAX);
   BLEDevice::init(String("Guardian-") + (g_deviceId + 9));
   BLEDevice::setMTU(247);
   BLEDevice::setSecurityCallbacks(new SgBleSecurityCb());
@@ -229,12 +231,12 @@ static const char* sgDiscReasonError(uint8_t r) {
 // Called from loop() in setup mode. Returns true when the board should restart.
 static bool sgSetupLoop() {
   uint32_t now = millis();
-  if (g_bleCmdPending) {
-    char cmd[sizeof g_bleCmd];
+  if (g_bleCmdPending && g_bleCmd) {
+    char cmd[SG_BLE_CMD_MAX];
     portENTER_CRITICAL(&g_bleMux);
     memcpy(cmd, g_bleCmd, sizeof cmd);
     g_bleCmdPending = false;
-    memset(g_bleCmd, 0, sizeof g_bleCmd);
+    memset(g_bleCmd, 0, SG_BLE_CMD_MAX);
     portEXIT_CRITICAL(&g_bleMux);
     if (g_bleSecure) sgSetupCommand(cmd);         // the characteristic already needs it
     memset(cmd, 0, sizeof cmd);

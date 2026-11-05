@@ -19,14 +19,16 @@ static const uint32_t SG_BLOCK_LOG_MIN = 8000;    // skip log writes below (larg
 static const uint32_t SG_HEAP_SHED     = 24000;   // drop WebSocket clients below
 static const size_t   SG_BODY_MAX      = 1024;
 
-enum : uint8_t { SG_DEG_WS = 1, SG_DEG_HTTP = 2, SG_DEG_LOG = 4 };
-static const char* const SG_DEG_NAMES[] = {"ws_server", "http", "event_log"};
+enum : uint8_t { SG_DEG_WS = 1, SG_DEG_HTTP = 2, SG_DEG_LOG = 4, SG_DEG_MDNS = 8 };
+static const char* const SG_DEG_NAMES[] = {"ws_server", "http", "event_log", "mdns"};
+static const int SG_DEG_COUNT = 4;
 static volatile uint8_t g_degraded = 0;
 
 static void sgDegrade(uint8_t bit, const char* reason) {
   if (g_degraded & bit) return;
   g_degraded |= bit;
-  int i = bit == SG_DEG_WS ? 0 : bit == SG_DEG_HTTP ? 1 : 2;
+  int i = 0;
+  while (i < SG_DEG_COUNT - 1 && !(bit & (1 << i))) i++;
   JsonDocument d;
   d["feature"] = SG_DEG_NAMES[i];
   d["reason"] = reason;
@@ -142,7 +144,7 @@ static void sgHandleStatus() {
   JsonObject h = d["heap"].to<JsonObject>();
   h["free"] = ESP.getFreeHeap(); h["min"] = ESP.getMinFreeHeap(); h["max_block"] = ESP.getMaxAllocHeap();
   JsonArray deg = d["degraded"].to<JsonArray>();
-  for (int i = 0; i < 3; i++) if (g_degraded & (1 << i)) deg.add(SG_DEG_NAMES[i]);
+  for (int i = 0; i < SG_DEG_COUNT; i++) if (g_degraded & (1 << i)) deg.add(SG_DEG_NAMES[i]);
   d["last_seq"] = (uint32_t)g_seq;
   d["members"] = g_memberCount;
   sgSendJson(200, d);
@@ -408,6 +410,7 @@ static void sgWsBroadcast(const char* json, size_t len) {
 }
 
 // ---------------- start / task ----------------
+static void sgMdnsStart();
 static void sgApiStart() {
   static const char* hdrs[] = {"Authorization"};
   g_http = new WebServer(SG_HTTP_PORT);
@@ -427,6 +430,17 @@ static void sgApiStart() {
   g_wss->onEvent(sgWsServerEvent);
   g_wss->enableHeartbeat(15000, 10000, 1);
   g_wss->begin();
+  sgMdnsStart();
+  configTime(0, 0, "pool.ntp.org", "time.google.com");
+  g_apiStarted = true;
+}
+
+// mDNS (guardian.local + DNS-SD) runs while not guarding. A call needs the RAM
+// of its task and state (about 6-7 KB) for the two TLS sessions, so it is
+// paused from guard-on to guard-off (`degraded` "mdns"); the app then uses
+// the IP it already knows.
+static bool g_mdnsUp = false;
+static void sgMdnsStart() {
   if (MDNS.begin("guardian")) {
     MDNS.addService("guardian", "tcp", SG_HTTP_PORT);
     MDNS.addServiceTxt("guardian", "tcp", "id", (const char*)g_deviceId);
@@ -434,11 +448,20 @@ static void sgApiStart() {
     MDNS.addServiceTxt("guardian", "tcp", "proto", String(SG_PROTO));
     MDNS.addServiceTxt("guardian", "tcp", "fw", SG_FW_VERSION);
     MDNS.addService("http", "tcp", SG_HTTP_PORT);
+    g_mdnsUp = true;
   } else {
     sgEmitStr("log", "error", "mdns: begin failed");
   }
-  configTime(0, 0, "pool.ntp.org", "time.google.com");
-  g_apiStarted = true;
+}
+static void sgMdnsUpdate() {
+  if (g_guarding && g_mdnsUp) {
+    MDNS.end();
+    g_mdnsUp = false;
+    sgDegrade(SG_DEG_MDNS, "guarding");
+  } else if (!g_guarding && (g_degraded & SG_DEG_MDNS)) {
+    sgRecover(SG_DEG_MDNS);
+    sgMdnsStart();
+  }
 }
 
 // One queued event (see sgEmit): flags in byte 0, seq in bytes 4-7, then the JSON line.
@@ -470,6 +493,7 @@ static void sgApiTask(void*) {
         sgDegrade(SG_DEG_WS, "low_heap");         // the call pipeline comes first
         for (int i = 0; i < WEBSOCKETS_SERVER_CLIENT_MAX; i++) if (g_wsAuthed[i]) g_wss->disconnect(i);
       }
+      sgMdnsUpdate();
       g_http->handleClient();
       g_wss->loop();
     }

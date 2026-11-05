@@ -283,11 +283,11 @@ One shape everywhere (USB serial, WebSocket, `/events`):
 | `transcript` | state | `{"text":"...","lang":"no"}`. A spoken family word appears as `[family word]` |
 | `verdict` | state | `{"verdict":"safe"\|"unsure"\|"scam"\|"ai_error","reason":"...","latched":false,"http":200,"ms":1430,"chars":512,"word_match":false}` (+ `detail` on errors) |
 | `word_match` | state | `{"member_id":1,"member":"Mom"}`. Once per member per call |
-| `health` | sensor | `{"guarding":true,"free_heap":...,"min_free_heap":...,"max_block":...,"audio_sent":...,"audio_dropped":...,"ai_calls":...,"ai_ms":...,"mic_level":...,"ws_clients":1}` |
+| `health` | sensor | `{"guarding":true,"free_heap":...,"min_free_heap":...,"max_block":...,"audio_sent":...,"audio_dropped":...,"ai_calls":...,"ai_ms":...,"mic_level":...,"ws_clients":1,"stack_free":{"loop":...,"api":...,"ws":...,"ai":...}}`. `stack_free`: the least free stack each task has had since boot, in bytes |
 | `setup` | state | `{"state":"advertising"\|"paired"\|"connecting"\|"connected"\|"failed"\|"done"\|"timeout"\|"cancelled","error":"..."}`. Never contains the password or token |
 | `config` | state | `{"changed":["mic_gain"]}` |
 | `words` | state | `{"action":"add"\|"rename"\|"set"\|"clear"\|"remove","id":1,"name":"Mom"}` |
-| `degraded` | state | `{"feature":"ws_server","reason":"low_heap","free_heap":31000}` |
+| `degraded` | state | `{"feature":"ws_server","reason":"low_heap","free_heap":31000,"max_block":20468}`. `feature`: `ws_server`, `http`, `event_log` or `mdns`; `reason`: `low_heap`, or `guarding` for `mdns` |
 | `error` | log | text |
 | `ws_msg` | log | text (Deepgram messages) |
 | `wifi_retry` | log | SSID being retried |
@@ -299,7 +299,8 @@ WebSocket but **not** to the event log, so it cannot push the call history out.
 
 ## 5. Discovery
 
-- mDNS host name `guardian` (so `guardian.local`).
+- mDNS host name `guardian` (so `guardian.local`). mDNS is paused while the
+  board is guarding (see 6), so during a call use the IP address the app already has.
 - DNS-SD service `_guardian._tcp` on port 80 with TXT records `id=guardian-ab12`,
   `ws=81`, `proto=2`, `fw=2.0.0`.
 - The app resolves the service with Android NSD and keeps the board whose `id`
@@ -311,10 +312,14 @@ WebSocket but **not** to the event log, so it cannot push the call history out.
 
 ## 6. Memory and degraded features
 
-The ESP32-S3 has about 350 KB of free heap at boot, and the two TLS connections
-(Deepgram and Anthropic) need most of it. The firmware checks the heap and gives up
-features in this order rather than crash:
+The board has no PSRAM. Measured on the board: about 210 KB of heap is free when
+`setup()` starts, and about 87 KB once Wi-Fi is joined and the local API is
+running (measured on commit 543cd0c, idle; `health` shows the current figure). Each TLS session (Deepgram and Anthropic) takes about
+40 KB, of which 32 KB are mbedTLS's fixed 16 KB in and out buffers, so a call
+with both is tight. The firmware gives up features rather than crash:
 
+0. While guarding, mDNS (`guardian.local`, DNS-SD) is paused to leave its 6-7 KB
+   to the call (`degraded` `mdns`, reason `guarding`). It comes back on guard-off.
 1. Below 40 KB free: new WebSocket clients are refused (`degraded` `ws_server`);
    below 24 KB the connected ones are dropped too.
 2. Below 30 KB free: HTTP requests get `503 low_memory` (`degraded` `http`).

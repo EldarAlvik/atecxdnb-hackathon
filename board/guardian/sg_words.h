@@ -10,6 +10,8 @@ static const int SG_WORD_MIN      = 3;    // bytes, normalised
 static const int SG_WORD_MAX      = 48;
 static const int SG_WORD_MAXWORDS = 4;
 static const char* SG_REDACTED    = "[family word]";
+// Stands in for a whole segment that could not be checked (no memory for matching).
+static const char* SG_UNCHECKED   = "[not checked: low memory]";
 
 struct SgMember {
   uint8_t  id;
@@ -142,15 +144,23 @@ static const size_t SG_MATCH_AHEAD  = 160;      // look past the window for a ph
 // at least `len`, more if a replaced phrase ran past the window.
 // Matches mark bytes in a coverage map, so there is no limit on their number:
 // every matched byte is replaced, whatever else happens.
-static size_t sgMatchWindow(const char* text, size_t len, size_t ahead, String& out, const SgCand* cands, int nc,
+static const size_t SG_MATCH_SPAN = SG_MATCH_WINDOW + SG_MATCH_AHEAD;
+// Scratch space for matching, on the heap only while a segment is checked (and
+// only when some member has a word), so it costs no RAM the rest of the time.
+struct SgMatchBuf {
+  char norm[SG_MATCH_SPAN + 8];
+  SgTok toks[SG_MATCH_SPAN / 2 + 1];            // a token needs a letter and a separator
+  uint8_t covered[SG_MATCH_SPAN];
+  SgCand cands[SG_MAX_MEMBERS];
+};
+
+static size_t sgMatchWindow(const char* text, size_t len, size_t ahead, String& out, SgMatchBuf& mb, int nc,
                             uint8_t* ids, char (*names)[SG_NAME_MAX + 1], int maxIds, int& found) {
-  static const size_t SPAN = SG_MATCH_WINDOW + SG_MATCH_AHEAD;
-  static char norm[SPAN + 8];
-  static SgTok toks[SPAN / 2 + 1];              // a token needs a letter and a separator
-  static uint8_t covered[SPAN];
+  char* norm = mb.norm; SgTok* toks = mb.toks; uint8_t* covered = mb.covered;
+  const SgCand* cands = mb.cands;
   size_t span = len + ahead;
   memset(covered, 0, span);
-  int nt = sgTokenize(text, span, norm, sizeof norm, toks, sizeof toks / sizeof toks[0]);
+  int nt = sgTokenize(text, span, norm, sizeof mb.norm, toks, sizeof mb.toks / sizeof mb.toks[0]);
   size_t consumed = len;
   char phrase[SG_WORD_MAX + 8]; uint8_t h[32];
   for (int c = 0; c < nc; c++) {
@@ -174,7 +184,7 @@ static size_t sgMatchWindow(const char* text, size_t len, size_t ahead, String& 
     }
   }
   memset(phrase, 0, sizeof phrase);
-  memset(norm, 0, sizeof norm);
+  memset(norm, 0, sizeof mb.norm);
   // Copy the text, one marker per run of covered bytes.
   size_t i = 0;
   while (i < consumed) {
@@ -199,7 +209,13 @@ static int sgWordsMatch(const char* text, String& out, uint8_t* ids, char (*name
   out = text;
   size_t len = strlen(text);
   if (!g_memberCount || len == 0) return 0;
-  static SgCand cands[SG_MAX_MEMBERS];          // ws task only
+  SgMatchBuf* mb = (SgMatchBuf*)malloc(sizeof(SgMatchBuf));
+  if (!mb) {
+    // Never let an unchecked segment through: it could hold a family word.
+    out = SG_UNCHECKED;
+    return 0;
+  }
+  SgCand* cands = mb->cands;
   int nc = 0;
   xSemaphoreTake(g_wordsMtx, portMAX_DELAY);
   for (int i = 0; i < g_memberCount; i++) {
@@ -210,7 +226,7 @@ static int sgWordsMatch(const char* text, String& out, uint8_t* ids, char (*name
     memcpy(c.salt, g_members[i].salt, 16); memcpy(c.hash, g_members[i].hash, 32);
   }
   xSemaphoreGive(g_wordsMtx);
-  if (!nc) return 0;
+  if (!nc) { free(mb); return 0; }
   String r; r.reserve(len + 16);
   int found = 0;
   size_t pos = 0;
@@ -223,8 +239,10 @@ static int sgWordsMatch(const char* text, String& out, uint8_t* ids, char (*name
       else while (end > pos && ((uint8_t)text[end] & 0xC0) == 0x80) end--;   // UTF-8 boundary
     }
     size_t ahead = len - end < SG_MATCH_AHEAD ? len - end : SG_MATCH_AHEAD;
-    pos += sgMatchWindow(text + pos, end - pos, ahead, r, cands, nc, ids, names, maxIds, found);
+    pos += sgMatchWindow(text + pos, end - pos, ahead, r, *mb, nc, ids, names, maxIds, found);
   }
+  memset(mb, 0, sizeof(SgMatchBuf));            // salts, hashes, normalised text
+  free(mb);
   out = r;
   return found;
 }

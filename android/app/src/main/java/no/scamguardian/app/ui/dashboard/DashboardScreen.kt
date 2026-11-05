@@ -249,5 +249,6 @@ private fun degradedLabel(feature: String) = when (feature) {
     "ws_server" -> "new live connections"
     "http" -> "app requests"
     "event_log" -> "event history"
+    "mdns" -> "guardian.local (paused during calls)"
     else -> feature
 }
