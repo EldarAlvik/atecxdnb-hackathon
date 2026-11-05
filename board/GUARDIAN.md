@@ -3,7 +3,8 @@
 Runs entirely on the Atech ESP32-S3 board: the microphone streams the call audio
 to Deepgram (live speech-to-text, Norwegian + English), and every ~6 s with new
 text the board asks Claude Haiku (`claude-haiku-5-5`) whether the call looks like
-a scam. The verdict lights a traffic light and shows on the screen.
+a scam. The verdict lights one light grid in green, yellow or red and shows on
+the screen.
 
 ## Hardware (14port board)
 
@@ -11,14 +12,12 @@ a scam. The verdict lights a traffic light and shows on the screen.
 |---|---|
 | Microphone | 5, 6 |
 | Button | 7 |
-| Light grid: green (safe) | 9 |
-| Light grid: yellow (unsure / AI error) | 10 |
-| Light grid: red (scam) | 11 (the slot just above the Reset button) |
+| Light grid (green safe, yellow unsure / AI error, red scam) | 10 |
 | Screen 160x80 | 13, 14 |
 
-Port 12 is the Reset button on this board and cannot hold a module. If a colour
-lights the wrong grid, swap the `port:` numbers of `led_green` / `led_yellow` /
-`led_red` in `project.yaml`.
+Port 12 is the Reset button on this board and cannot hold a module. The light
+grid must sit in port 10; to move it, change the `port:` of `led` in
+`project.yaml`.
 
 ## Secrets
 
@@ -56,7 +55,7 @@ uv run atech check
   mode. When idle, the screen says "Press button to guard",
   shows the IP, and the lights are off.
 - **Guarding:** WiFi connects ("WiFi..."), then the Deepgram stream ("CONNECT"),
-  then "LISTENING" with a breathing blue yellow-grid. Each verdict lights one grid:
+  then "LISTENING" with the light breathing blue. Each verdict sets its colour:
   green = safe, yellow = unsure, red = scam. **Scam stays red until guarding is
   turned off.** "AI err" (yellow) means the Claude call failed; it retries.
 - Screen: verdict, `W+/W-` (WiFi) and `STT+/STT-` (Deepgram), Claude's reason,

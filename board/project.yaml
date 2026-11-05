@@ -1,7 +1,7 @@
 name: scam_call_guardian
 board: 14port
 # Scam Call Guardian: mic -> Deepgram live STT (TLS WebSocket) -> Claude Haiku
-# verdict (HTTPS) -> traffic light on three grids + status screen. Everything runs
+# verdict (HTTPS) -> one light grid (port 10) + status screen. Everything runs
 # on the board. Secrets: `uv run python board/gen_secrets.py` (see GUARDIAN.md).
 #
 # Version 2 adds BLE setup from the phone, a local API on the home Wi-Fi (HTTP +
@@ -14,12 +14,9 @@ libraries:
 modules:
   - {id: microphone, instance: microphone, ports: [5, 6]}
   - {id: button,     instance: button,     port: 7}
-  # Port 12 is the Reset button on this board, so the three grids sit in the
-  # three slots above it (9, 10, 11). Red is next to the screen, green on top.
-  # If the colours come out in the wrong grids, swap these three port numbers.
-  - {id: neopixel,   instance: led_green,  port: 9}
-  - {id: neopixel,   instance: led_yellow, port: 10}
-  - {id: neopixel,   instance: led_red,    port: 11}
+  # One light grid shows the verdict as a colour: green safe, yellow unsure or
+  # AI error, red scam, breathing blue while listening or in setup.
+  - {id: neopixel,   instance: led,        port: 10}
   - {id: st7735_tft, instance: st7735_tft, ports: [13, 14]}
 code:
   globals: |
@@ -600,8 +597,7 @@ code:
     }
 
     static void sgLightsOff() {
-      led_green.clear(); led_yellow.clear(); led_red.clear();
-      led_green.show(); led_yellow.show(); led_red.show();
+      led.clear(); led.show();
     }
 
     // ---------------- Wi-Fi (normal mode) ----------------
@@ -636,11 +632,10 @@ code:
         g_restartAt = millis() + 200;
       }
       if (lights.ready(40)) {                         // fast blue breathe: setup
-        led_green.clear(); led_red.clear(); led_yellow.clear();
         float ph = (millis() % 1200) / 1200.0f;
         float k = 0.5f - 0.5f * cosf(ph * 2.0f * PI);
-        led_yellow.setAll(0, 0, (uint8_t)(10 + 140 * k));
-        led_green.show(); led_yellow.show(); led_red.show();
+        led.setAll(0, 0, (uint8_t)(10 + 140 * k));
+        led.show();
       }
       if (frame.ready(250)) {
         st7735_tft.clear();
@@ -726,20 +721,20 @@ code:
       // ---- traffic light ----
       if (lights.ready(40)) {
         uint8_t v = g_verdict;
-        led_green.clear(); led_yellow.clear(); led_red.clear();
+        led.clear();
         if (g_guarding) {
-          if (v == V_SCAM)        led_red.setAll(255, 0, 0);
-          else if (v == V_SAFE)   led_green.setAll(0, 255, 0);
-          else if (v == V_UNSURE || v == V_AIERR) led_yellow.setAll(255, 150, 0);
+          if (v == V_SCAM)        led.setAll(255, 0, 0);
+          else if (v == V_SAFE)   led.setAll(0, 255, 0);
+          else if (v == V_UNSURE || v == V_AIERR) led.setAll(255, 150, 0);
           else if (g_wsConnected) {                     // listening: slow blue breathe
             float ph = (millis() % 2400) / 2400.0f;
             float k = 0.5f - 0.5f * cosf(ph * 2.0f * PI);
-            led_yellow.setAll(0, 0, (uint8_t)(10 + 110 * k));
+            led.setAll(0, 0, (uint8_t)(10 + 110 * k));
           } else if ((millis() / 400) % 2) {            // connecting: blink centre
-            led_yellow.setPixel(4, 60, 60, 60);
+            led.setPixel(4, 60, 60, 60);
           }
         }
-        led_green.show(); led_yellow.show(); led_red.show();
+        led.show();
       }
 
       // ---- screen ----
@@ -834,9 +829,7 @@ code:
       g_seq = max(hw, g_logLastSeq);
       g_seqSavedHw = g_seq;              // the first flush saves a new high-water mark
     }
-    led_green.clear();  led_green.show();
-    led_yellow.clear(); led_yellow.show();
-    led_red.clear();    led_red.show();
+    led.clear(); led.show();
     {
       JsonDocument d;
       d["fw"] = SG_FW_VERSION;
