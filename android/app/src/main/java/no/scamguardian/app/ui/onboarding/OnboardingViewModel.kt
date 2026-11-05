@@ -165,12 +165,19 @@ class OnboardingViewModel @Inject constructor(
         send(SetupCommand.Pair, null)
     }
 
+    /** Debug builds: skip choosing a network. The board joins its saved network, or the
+     *  one compiled in from .env, and still hands over the token (`pair`). */
+    fun skipWifiDebug() {
+        startJoin(_ui.value.savedSsid.ifEmpty { "the board's own network" })
+        send(SetupCommand.Pair, null)
+    }
+
     private fun startJoin(ssid: String) {
         _ui.update { it.copy(step = Step.JOINING, joiningSsid = ssid, error = null) }
         joinTimeout?.cancel()
-        // The board tries for up to 20 s and then notifies; this only catches a lost notification.
+        // The board tries for up to 30 s and then notifies; this only catches a lost notification.
         joinTimeout = viewModelScope.launch {
-            delay(45_000)
+            delay(60_000)
             if (_ui.value.step == Step.JOINING) _ui.update { it.copy(step = Step.WIFI, error = failureText("timeout")) }
         }
     }
@@ -274,8 +281,10 @@ class OnboardingViewModel @Inject constructor(
         fun failureText(error: String?): String = when (error) {
             "auth" -> "Wrong Wi-Fi password. Check it and try again."
             "no_ssid" -> "The board cannot find that network. It needs a 2.4 GHz network within reach."
-            "timeout" -> "The board could not join in time. Move it closer to the router and try again."
+            "timeout" -> "The board could not join in time. It needs a 2.4 GHz network: for a phone " +
+                "hotspot, turn on \"extend compatibility\" or 2.4 GHz, keep it on, and try again."
             "no_saved_wifi" -> "The board has no saved network. Choose one below."
+            "storage" -> "The board joined but could not save the network. Try again."
             "bad_request" -> "The board did not understand the request. Try again."
             null, "" -> "Joining failed. Try again."
             else -> "Joining failed ($error). Try again."

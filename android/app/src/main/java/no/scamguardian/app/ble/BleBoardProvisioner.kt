@@ -206,6 +206,9 @@ private class BleSession(
         val cccd = statusChar.getDescriptor(GuardianGatt.CCCD) ?: throw ProvisionException.NotAGuardian()
         withAuthRetry("subscribe") { writeDescriptor(cccd, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) }
         statusFlow.emit(readStatus())
+        // Wi-Fi and BLE share the board's radio: a slow link leaves Wi-Fi the air time it
+        // needs to join. The board asks for this too; the phone's request is what counts.
+        gatt?.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_LOW_POWER)
     }
 
     private suspend fun connectGatt() {

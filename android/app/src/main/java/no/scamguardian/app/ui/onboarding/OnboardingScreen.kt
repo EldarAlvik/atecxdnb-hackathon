@@ -217,6 +217,11 @@ private fun WifiStep(ui: OnboardingUi, vm: OnboardingViewModel) {
     Button(onClick = { vm.joinWifi(ssid.trim(), pass) }, enabled = ssid.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
         Text("Connect the board")
     }
+    if (BuildConfig.DEBUG) {
+        OutlinedButton(onClick = vm::skipWifiDebug, modifier = Modifier.fillMaxWidth()) {
+            Text("Skip: use the board's own network (debug)")
+        }
+    }
 }
 
 @Composable

@@ -67,8 +67,8 @@ bytes (long reads and writes are fine).
 | op | What the board does |
 |---|---|
 | `scan` | Scans for Wi-Fi networks (2-4 s). Then `status` = `scanned` and `networks` holds the list. |
-| `wifi` | Tries to join `ssid` with `pass` (empty `pass` = open network) for up to 20 s. On success it saves both in NVS, makes a new device token and notifies `connected`. On failure nothing is saved. |
-| `pair` | Like `wifi` but with the network already saved. Use it to pair a new phone without typing the password again. Fails with `no_saved_wifi` if none is saved. |
+| `wifi` | Tries to join `ssid` with `pass` (empty `pass` = open network) for up to 30 s. It first asks the phone for a 50-100 ms BLE connection interval, since Wi-Fi and BLE share the radio. On success it saves both in NVS, makes a new device token and notifies `connected`. On failure nothing is saved. |
+| `pair` | Like `wifi` but with the network already saved, or else the one compiled in from `.env` (which is not saved). Use it to pair a new phone without typing the password again. Fails with `no_saved_wifi` if there is neither. |
 | `done` | The app has stored the token. The board stops BLE and starts the guardian. |
 
 ### `status` notifications
@@ -86,7 +86,10 @@ bytes (long reads and writes are fine).
 `error` is one of `no_ssid` (network not found), `auth` (wrong password),
 `timeout`, `no_saved_wifi`, `bad_request`.
 
-`saved_ssid` is empty when no network is saved. The password is never sent back.
+`saved_ssid` is the network `pair` would join (the saved one, else the `.env` one);
+empty when there is neither. The password is never sent back. A `failed` status may
+carry `reason`, the ESP32 Wi-Fi disconnect reason code (e.g. 201 = network not
+found, 15 or 202 = wrong password).
 
 A notification longer than the MTU allows is cut short; if it does not parse as
 JSON, read `status` instead, which always holds the latest full value.

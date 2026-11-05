@@ -19,13 +19,14 @@
 
 static const uint32_t SG_SETUP_TIMEOUT_MS  = 10UL * 60 * 1000;
 static const uint32_t SG_SETUP_LINGER_MS   = 60000;   // after success, without `done`
-static const uint32_t SG_SETUP_CONNECT_MS  = 20000;
+static const uint32_t SG_SETUP_CONNECT_MS  = 30000;
 
 enum SgSetupPhase : uint8_t { SP_WAITING, SP_SCANNING, SP_CONNECTING, SP_CONNECTED, SP_FAILED, SP_BYE };
 
 static uint32_t g_passkey = 0;
 static volatile bool g_blePeer = false;      // a phone is connected
 static volatile bool g_bleSecure = false;    // ... and paired with the passkey
+static volatile uint16_t g_bleConn = 0xFFFF;  // its connection handle
 static BLECharacteristic* g_chStatus = nullptr;
 static BLECharacteristic* g_chNetworks = nullptr;
 static portMUX_TYPE g_bleMux = portMUX_INITIALIZER_UNLOCKED;
@@ -40,7 +41,7 @@ static volatile uint8_t g_wifiDiscReason = 0;
 
 class SgBleServerCb : public BLEServerCallbacks {
   void onConnect(BLEServer*, ble_gap_conn_desc* desc) override {
-    g_blePeer = true; g_bleSecure = false;
+    g_blePeer = true; g_bleSecure = false; g_bleConn = desc->conn_handle;
     BLESecurity::startSecurity(desc->conn_handle);   // ask the phone to pair now
   }
   void onDisconnect(BLEServer*, ble_gap_conn_desc*) override {
@@ -103,12 +104,14 @@ static void sgSetupEvent(const char* state, const char* error = nullptr) {
   JsonDocument d; d["state"] = state; if (error) d["error"] = error;
   sgEmitDoc("state", "setup", d);
 }
-static void sgSetupFail(const char* error) {
+static void sgSetupFail(const char* error, int reason = 0) {
   g_setupPhase = SP_FAILED; g_phaseAt = millis();
   g_setupPass = String();
-  JsonDocument d; d["state"] = "failed"; d["error"] = error; sgSetupNotify(d);
-  sgSetupEvent("failed", error);
-  g_setupLine = String("Failed: ") + error;
+  JsonDocument d; d["state"] = "failed"; d["error"] = error; if (reason) d["reason"] = reason;
+  sgSetupNotify(d);
+  JsonDocument e; e["state"] = "failed"; e["error"] = error; if (reason) e["reason"] = reason;
+  sgEmitDoc("state", "setup", e);
+  g_setupLine = String("Failed: ") + error + (reason ? String(" (") + reason + ")" : String());
 }
 
 static void sgBleBegin() {
@@ -140,7 +143,7 @@ static void sgBleBegin() {
   g_chNetworks->setValue("[]");                               // before the host runs: no race
   JsonDocument d;
   d["state"] = "ready"; d["device"] = g_deviceId; d["fw"] = SG_FW_VERSION; d["proto"] = SG_PROTO;
-  d["saved_ssid"] = g_savedSsid;
+  d["saved_ssid"] = g_savedSsid.length() ? g_savedSsid : String(SG_WIFI_SSID);   // what `pair` joins
   String s; serializeJson(d, s); g_chStatus->setValue(s);
   svc->start();
   BLEAdvertising* adv = BLEDevice::getAdvertising();
@@ -157,9 +160,23 @@ static void sgBleBegin() {
   sgSetupEvent("advertising");
 }
 
+// Wi-Fi and BLE share the radio. A phone keeps the link at a 7.5 ms interval,
+// which leaves Wi-Fi too little air time to join; ask for 50-100 ms first.
+static void sgBleSlowDown() {
+  if (!g_blePeer || g_bleConn == 0xFFFF) return;
+  struct ble_gap_upd_params p = {};
+  p.itvl_min = 40; p.itvl_max = 80;            // x 1.25 ms
+  p.latency = 0;
+  p.supervision_timeout = 600;                 // x 10 ms
+  ble_gap_update_params(g_bleConn, &p);
+}
+
 static void sgSetupStartWifi(const String& ssid, const String& pass, bool pair) {
   g_setupSsid = ssid; g_setupPass = pass; g_setupIsPair = pair;
+  sgBleSlowDown();
+  WiFi.setAutoReconnect(false);                // one clean attempt, no retries behind our back
   WiFi.disconnect();
+  delay(50);
   g_wifiDiscReason = 0;
   if (pass.length()) WiFi.begin(ssid.c_str(), pass.c_str()); else WiFi.begin(ssid.c_str());
   g_setupPhase = SP_CONNECTING; g_phaseAt = millis();
@@ -185,8 +202,11 @@ static void sgSetupCommand(const char* text) {
     }
     sgSetupStartWifi(ssid, pass, false);
   } else if (!strcmp(op, "pair")) {
-    if (!g_savedSsid.length()) { sgSetupFail("no_saved_wifi"); return; }
-    sgSetupStartWifi(g_savedSsid, g_savedPass, true);
+    // The saved network, else the one compiled in from .env (not saved: normal
+    // mode falls back to it anyway).
+    if (g_savedSsid.length()) sgSetupStartWifi(g_savedSsid, g_savedPass, true);
+    else if (sgHasFallbackWifi()) sgSetupStartWifi(SG_WIFI_SSID, SG_WIFI_PASSWORD, true);
+    else sgSetupFail("no_saved_wifi");
   } else if (!strcmp(op, "done")) {
     if (g_setupPhase != SP_CONNECTED) { sgSetupFail("bad_request"); return; }
     g_setupPhase = SP_BYE; g_phaseAt = millis();
@@ -273,9 +293,10 @@ static bool sgSetupLoop() {
       }
       const char* err = sgDiscReasonError(g_wifiDiscReason);
       uint32_t age = now - g_phaseAt;
-      if ((err && age > 8000) || age > SG_SETUP_CONNECT_MS) {
+      if ((err && age > 10000) || age > SG_SETUP_CONNECT_MS) {
+        int reason = g_wifiDiscReason;
         WiFi.disconnect();
-        sgSetupFail(err ? err : "timeout");
+        sgSetupFail(err ? err : "timeout", reason);
       }
       break;
     }
