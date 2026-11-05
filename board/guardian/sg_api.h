@@ -16,6 +16,8 @@ static const int      SG_WS_MAX_CLIENTS = 2;
 static const uint32_t SG_HEAP_WS_MIN   = 40000;   // refuse new WebSocket clients below
 static const uint32_t SG_HEAP_HTTP_MIN = 30000;   // 503 below
 static const uint32_t SG_BLOCK_LOG_MIN = 8000;    // skip log writes below (largest block)
+static const uint32_t SG_HEAP_SHED     = 24000;   // drop WebSocket clients below
+static const size_t   SG_BODY_MAX      = 1024;
 
 enum : uint8_t { SG_DEG_WS = 1, SG_DEG_HTTP = 2, SG_DEG_LOG = 4 };
 static const char* const SG_DEG_NAMES[] = {"ws_server", "http", "event_log"};
@@ -76,11 +78,30 @@ static bool sgGate() {
   sgRecover(SG_DEG_HTTP);
   return true;
 }
+// Request bodies arrive through the WebServer's "raw" path in small chunks, so a
+// large body never gets buffered (the normal path would hold all of it in RAM
+// before any handler could check the token). Only SG_BODY_MAX bytes are kept.
+static char   g_body[SG_BODY_MAX + 1];
+static size_t g_bodyLen = 0;
+static bool   g_bodyOver = false;
+static void sgRawBody() {
+  HTTPRaw& r = g_http->raw();
+  if (r.status == RAW_START) { g_bodyLen = 0; g_bodyOver = false; }
+  else if (r.status == RAW_WRITE) {
+    size_t n = r.currentSize;
+    if (g_bodyLen + n > SG_BODY_MAX) { g_bodyOver = true; n = SG_BODY_MAX - g_bodyLen; }
+    memcpy(g_body + g_bodyLen, r.buf, n);
+    g_bodyLen += n;
+  }
+  g_body[g_bodyLen] = 0;
+}
 // Parses the request body as a JSON object. Sends 400 and returns false if not.
 static bool sgBody(JsonDocument& d) {
-  String b = g_http->arg("plain");
-  if (b.length() > 1024) { sgSendError(400, "body too large"); return false; }
-  if (deserializeJson(d, b) || !d.is<JsonObject>()) { sgSendError(400, "bad json"); return false; }
+  if (g_bodyOver) { sgSendError(400, "body too large"); return false; }
+  bool bad = deserializeJson(d, (const char*)g_body, g_bodyLen) || !d.is<JsonObject>();
+  memset(g_body, 0, g_bodyLen);                   // may hold a family word
+  g_bodyLen = 0;
+  if (bad) { sgSendError(400, "bad json"); return false; }
   return true;
 }
 static uint32_t sgNow() { time_t t = time(nullptr); return t > 1700000000 ? (uint32_t)t : 0; }
@@ -220,11 +241,11 @@ static void sgHandleConfig() {
       }
     }
     if (ch.size()) {
+      if (!sgSaveSettings(n)) { sgSendError(500, "could not save"); return; }
       xSemaphoreTake(g_mtx, portMAX_DELAY);
       g_cfg = n;
       xSemaphoreGive(g_mtx);
       g_gain = n.micGain;
-      sgSaveSettings();
       sgEmitDoc("state", "config", changed);
     }
   }
@@ -257,10 +278,19 @@ static void sgHandleWords() {
     int i = sgFindMember(id);
     if (i < 0) { xSemaphoreGive(g_wordsMtx); sgSendError(404, "no such member"); return; }
     char name[SG_NAME_MAX + 1]; memcpy(name, g_members[i].name, sizeof name);
-    memset(&g_members[i], 0, sizeof(SgMember));
+    SgMember removed = g_members[i];
     memmove(&g_members[i], &g_members[i + 1], (g_memberCount - i - 1) * sizeof(SgMember));
     g_memberCount--;
-    sgWordsSave();
+    if (!sgWordsSave()) {                         // put it back: RAM follows NVS
+      memmove(&g_members[i + 1], &g_members[i], (g_memberCount - i) * sizeof(SgMember));
+      g_members[i] = removed; g_memberCount++;
+      memset(&removed, 0, sizeof removed);
+      xSemaphoreGive(g_wordsMtx);
+      sgSendError(500, "could not save");
+      return;
+    }
+    memset(&removed, 0, sizeof removed);
+    memset(&g_members[g_memberCount], 0, sizeof(SgMember));
     xSemaphoreGive(g_wordsMtx);
     sgWordsEvent("remove", id, name);
     JsonDocument d; d["deleted"] = id; sgSendJson(200, d);
@@ -292,11 +322,13 @@ static void sgHandleWords() {
       else if (!wordV.isNull()) { err = sgSetWord(m, word); actions[na++] = "set"; }
       if (!err) {
         m.updated = sgNow();
+        SgMember old = g_members[i];
         g_members[i] = m;
-        if (!sgWordsSave()) err = "could not save";
-        sgMemberJson(m, d.to<JsonObject>());
-        memcpy(evName, m.name, sizeof evName);
+        if (!sgWordsSave()) { g_members[i] = old; err = "could not save"; code = 500; }
+        else { sgMemberJson(m, d.to<JsonObject>()); memcpy(evName, m.name, sizeof evName); }
+        memset(&old, 0, sizeof old);
       }
+      memset(&m, 0, sizeof m);
     }
   } else if (!b["id"].isNull()) {
     err = "id must be an integer";
@@ -309,15 +341,25 @@ static void sgHandleWords() {
     strlcpy(m.name, name.c_str(), sizeof m.name);
     if (word.length()) err = sgSetWord(m, word);
     if (!err) {
-      m.id = g_nextMemberId++;
-      if (g_nextMemberId == 0) g_nextMemberId = 1;
+      // Next id not used by a current member (ids wrap after 255).
+      uint8_t nid = g_nextMemberId ? g_nextMemberId : 1;
+      while (sgFindMember(nid) >= 0) nid = nid == 255 ? 1 : nid + 1;
+      uint8_t oldNext = g_nextMemberId;
+      m.id = nid;
+      g_nextMemberId = nid == 255 ? 1 : nid + 1;
       m.updated = sgNow();
       g_members[g_memberCount++] = m;
-      if (!sgWordsSave()) err = "could not save";
-      sgMemberJson(m, d.to<JsonObject>());
-      id = m.id; memcpy(evName, m.name, sizeof evName);
-      actions[na++] = "add";
+      if (!sgWordsSave()) {
+        g_memberCount--; memset(&g_members[g_memberCount], 0, sizeof(SgMember));
+        g_nextMemberId = oldNext;
+        err = "could not save"; code = 500;
+      } else {
+        sgMemberJson(m, d.to<JsonObject>());
+        id = m.id; memcpy(evName, m.name, sizeof evName);
+        actions[na++] = "add";
+      }
     }
+    memset(&m, 0, sizeof m);
   }
   xSemaphoreGive(g_wordsMtx);
   word = String();                                // drop the plain word
@@ -371,14 +413,14 @@ static void sgApiStart() {
   g_http = new WebServer(SG_HTTP_PORT);
   g_http->collectHeaders(hdrs, 1);
   g_http->on("/status", HTTP_GET, sgHandleStatus);
-  g_http->on("/guard", HTTP_POST, sgHandleGuard);
+  g_http->on("/guard", HTTP_POST, sgHandleGuard, sgRawBody);
   g_http->on("/events", HTTP_GET, sgHandleEvents);
   g_http->on("/config", HTTP_GET, sgHandleConfig);
-  g_http->on("/config", HTTP_POST, sgHandleConfig);
+  g_http->on("/config", HTTP_POST, sgHandleConfig, sgRawBody);
   g_http->on("/words", HTTP_GET, sgHandleWords);
-  g_http->on("/words", HTTP_POST, sgHandleWords);
-  g_http->on("/words", HTTP_DELETE, sgHandleWords);
-  g_http->on("/setup", HTTP_POST, sgHandleSetup);
+  g_http->on("/words", HTTP_POST, sgHandleWords, sgRawBody);
+  g_http->on("/words", HTTP_DELETE, sgHandleWords, sgRawBody);
+  g_http->on("/setup", HTTP_POST, sgHandleSetup, sgRawBody);
   g_http->onNotFound([]() { sgSendError(404, "not found"); });
   g_http->begin();
   g_wss = new WebSocketsServer(SG_WS_PORT);
@@ -406,11 +448,14 @@ static void sgApiHandleEvent(char* line) {
   char* json = line + SG_EV_HDR;
   size_t len = strlen(json);
   if (len && json[len - 1] == '\n') len--;
-  if (flags & SG_EV_LOG) {
+  if ((flags & SG_EV_LOG) && g_logOk) {
+    static uint32_t lastErrAt = 0;
     if (ESP.getMaxAllocHeap() < SG_BLOCK_LOG_MIN) sgDegrade(SG_DEG_LOG, "low_heap");
-    else {
-      sgRecover(SG_DEG_LOG);
-      if (!sgLogAppend(seq, json, len)) sgEmitStr("log", "error", "log: write failed");
+    else if (sgLogAppend(seq, json, len)) sgRecover(SG_DEG_LOG);
+    else if (!lastErrAt || millis() - lastErrAt > 60000) {
+      // At most once a minute, so a broken log cannot feed itself errors.
+      lastErrAt = millis();
+      sgEmitStr("log", "error", "log: write failed");
     }
   }
   if ((flags & SG_EV_NET) && g_apiStarted) sgWsBroadcast(json, len);
@@ -421,6 +466,10 @@ static void sgApiTask(void*) {
   for (;;) {
     if (!g_apiStarted && !g_setupMode && WiFi.status() == WL_CONNECTED) sgApiStart();
     if (g_apiStarted) {
+      if (g_wsClientCount && ESP.getFreeHeap() < SG_HEAP_SHED) {
+        sgDegrade(SG_DEG_WS, "low_heap");         // the call pipeline comes first
+        for (int i = 0; i < WEBSOCKETS_SERVER_CLIENT_MAX; i++) if (g_wsAuthed[i]) g_wss->disconnect(i);
+      }
       g_http->handleClient();
       g_wss->loop();
     }

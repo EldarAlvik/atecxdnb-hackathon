@@ -9,6 +9,8 @@
 #include <BLEServer.h>
 #include <BLESecurity.h>
 #include "host/ble_store.h"
+#include "host/ble_hs.h"
+#include "nimble/nimble_port.h"
 
 #define SG_BLE_SERVICE  "47a10001-8b3c-4d2e-9f1a-5c6d7e8f9a0b"
 #define SG_BLE_COMMAND  "47a10002-8b3c-4d2e-9f1a-5c6d7e8f9a0b"
@@ -67,10 +69,35 @@ class SgBleCommandCb : public BLECharacteristicCallbacks {
   }
 };
 
+// Characteristic values are only changed on the NimBLE host task, which also
+// serves reads and subscriptions: loop() leaves the new value here and queues an
+// event that applies it there.
+static SemaphoreHandle_t g_blePendMtx = nullptr;
+static String g_pendStatus, g_pendNets;
+static bool   g_pendStatusSet = false, g_pendNetsSet = false;
+static struct ble_npl_event g_bleApplyEv;
+
+static void sgBleApply(struct ble_npl_event*) {
+  String st, nets; bool hs, hn;
+  xSemaphoreTake(g_blePendMtx, portMAX_DELAY);
+  hs = g_pendStatusSet; hn = g_pendNetsSet;
+  if (hs) { st = g_pendStatus; g_pendStatus = String(); }
+  if (hn) { nets = g_pendNets; g_pendNets = String(); }
+  g_pendStatusSet = g_pendNetsSet = false;
+  xSemaphoreGive(g_blePendMtx);
+  if (hn) g_chNetworks->setValue(nets);
+  if (hs) { g_chStatus->setValue(st); if (g_blePeer) g_chStatus->notify(); }
+}
+static void sgBlePost(bool status, const String& v) {
+  xSemaphoreTake(g_blePendMtx, portMAX_DELAY);
+  if (status) { g_pendStatus = v; g_pendStatusSet = true; }
+  else        { g_pendNets = v;   g_pendNetsSet = true; }
+  xSemaphoreGive(g_blePendMtx);
+  ble_npl_eventq_put(nimble_port_get_dflt_eventq(), &g_bleApplyEv);   // ignored if already queued
+}
 static void sgSetupNotify(JsonDocument& d) {
   String s; serializeJson(d, s);
-  g_chStatus->setValue(s);
-  if (g_blePeer) g_chStatus->notify();
+  sgBlePost(true, s);
 }
 static void sgSetupEvent(const char* state, const char* error = nullptr) {
   JsonDocument d; d["state"] = state; if (error) d["error"] = error;
@@ -92,7 +119,10 @@ static void sgBleBegin() {
   BLESecurity::setCapability(ESP_IO_CAP_OUT);                 // display only
   BLESecurity::setAuthenticationMode(true, true, true);       // bond, MITM, LE Secure Connections
   BLESecurity::setPassKey(true, g_passkey);
+  ble_hs_cfg.sm_sc_only = 1;                                  // no fallback to legacy pairing
   ble_store_clear();                                          // forget phones paired before
+  g_blePendMtx = xSemaphoreCreateMutex();
+  ble_npl_event_init(&g_bleApplyEv, sgBleApply, nullptr);
 
   BLEServer* srv = BLEDevice::createServer();
   srv->setCallbacks(new SgBleServerCb());
@@ -107,7 +137,7 @@ static void sgBleBegin() {
   g_chNetworks = svc->createCharacteristic(SG_BLE_NETWORKS,
       BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_READ_ENC |
       BLECharacteristic::PROPERTY_READ_AUTHEN);
-  g_chNetworks->setValue("[]");
+  g_chNetworks->setValue("[]");                               // before the host runs: no race
   JsonDocument d;
   d["state"] = "ready"; d["device"] = g_deviceId; d["fw"] = SG_FW_VERSION; d["proto"] = SG_PROTO;
   d["saved_ssid"] = g_savedSsid;
@@ -207,15 +237,17 @@ static bool sgSetupLoop() {
       }
       for (int a = 1; a < m; a++)
         for (int b = a; b > 0 && WiFi.RSSI(order[b]) > WiFi.RSSI(order[b - 1]); b--) { int t = order[b]; order[b] = order[b - 1]; order[b - 1] = t; }
+      // A BLE attribute holds at most 512 bytes: stop adding before that.
       JsonDocument list; JsonArray arr = list.to<JsonArray>();
       for (int k = 0; k < m && k < 12; k++) {
         JsonObject o = arr.add<JsonObject>();
         o["ssid"] = WiFi.SSID(order[k]);
         o["rssi"] = WiFi.RSSI(order[k]);
         o["secure"] = WiFi.encryptionType(order[k]) != WIFI_AUTH_OPEN;
+        if (measureJson(list) > 500) { arr.remove(arr.size() - 1); break; }
       }
       String s; serializeJson(list, s);
-      g_chNetworks->setValue(s);
+      sgBlePost(false, s);
       WiFi.scanDelete();
       g_setupPhase = SP_WAITING; g_phaseAt = now;
       JsonDocument d; d["state"] = "scanned"; d["count"] = arr.size(); sgSetupNotify(d);
@@ -224,9 +256,10 @@ static bool sgSetupLoop() {
     }
     case SP_CONNECTING: {
       if (WiFi.status() == WL_CONNECTED) {
-        if (!g_setupIsPair) sgSaveWifi(g_setupSsid, g_setupPass);
+        bool saved = g_setupIsPair || sgSaveWifi(g_setupSsid, g_setupPass);
         g_setupPass = String();
-        String token = sgNewToken();
+        String token = saved ? sgNewToken() : String();
+        if (!token.length()) { WiFi.disconnect(); sgSetupFail("storage"); break; }
         JsonDocument d;
         d["state"] = "connected"; d["ssid"] = g_setupSsid; d["ip"] = WiFi.localIP().toString();
         d["host"] = "guardian.local"; d["port"] = SG_HTTP_PORT; d["ws_port"] = SG_WS_PORT;

@@ -57,6 +57,7 @@ code:
     static const size_t   SG_AUDIO_BUF_BYTES = 16000;  // 0.5 s of 16 kHz 16-bit mono (heap is tight)
     static const size_t   SG_AUDIO_CHUNK     = 3200;   // 100 ms per WebSocket frame
     static const size_t   SG_TRANSCRIPT_MAX  = 2400;   // rolling window (bytes)
+    static const size_t   SG_SEGMENT_MAX     = 800;    // one Deepgram segment, after redaction
 
     static const char* SG_SYSTEM_PROMPT =
         "You are a real-time phone-scam detector protecting a person in Norway. You get a "
@@ -85,6 +86,7 @@ code:
     static volatile uint32_t g_session     = 0;      // bumps on every guard-on
     static volatile bool     g_wsConnected = false;
     static volatile bool     g_sttStarted  = false;  // Deepgram socket opened or opening
+    static volatile uint32_t g_streamGen   = 0;      // bumps when the Deepgram stream drops
     static volatile bool     g_streamAudio = false;  // mic callback writes to buffer
     static volatile int      g_gain        = 8;      // digital mic gain
     static volatile uint32_t g_audioDropped = 0;     // bytes lost to a full buffer
@@ -187,17 +189,19 @@ code:
     static void sgFlushEvents() {
       char* line;
       for (int i = 0; i < 8 && xQueueReceive(g_eventQ, &line, 0) == pdTRUE; i++) {
+        // seq survives restarts: the log holds the last logged one, NVS a
+        // high-water mark saved before any number above it goes out, so a number
+        // already sent (e.g. health) is never used again.
+        uint32_t seq; memcpy(&seq, line + 4, 4);
+        if (seq >= g_seqSavedHw) {
+          g_seqSavedHw = seq + 256;
+          Preferences p;
+          if (p.begin("sg", false)) { p.putULong("seqhw", g_seqSavedHw); p.end(); }
+        }
         const char* json = line + SG_EV_HDR;
         Serial.write((const uint8_t*)json, strlen(json));
         if (line[0] && g_netQ && xQueueSend(g_netQ, &line, 0) == pdTRUE) continue;
         free(line);
-      }
-      // seq survives restarts: the log holds the last logged one, NVS a high-water
-      // mark, so a number already sent (e.g. health) is never used again.
-      if (g_seq >= g_seqSavedHw) {
-        g_seqSavedHw = g_seq + 256;
-        Preferences p;
-        if (p.begin("sg", false)) { p.putULong("seqhw", g_seqSavedHw); p.end(); }
       }
     }
 
@@ -250,9 +254,15 @@ code:
     static void sgAppendTranscript(const char* text, const char* lang) {
       // Spoken family words are found and replaced before the text goes anywhere.
       String clean;
-      uint8_t ids[4]; char names[4][SG_NAME_MAX + 1];
-      int found = sgWordsMatch(text, clean, ids, names, 4);
-      int fresh[4]; int nf = 0;
+      uint8_t ids[SG_MAX_MEMBERS]; char names[SG_MAX_MEMBERS][SG_NAME_MAX + 1];
+      int found = sgWordsMatch(text, clean, ids, names, SG_MAX_MEMBERS);
+      int fresh[SG_MAX_MEMBERS]; int nf = 0;
+      // Bound what one segment can add (Deepgram allows long frames, and each
+      // replaced word grows): keep its last SG_SEGMENT_MAX bytes, from a space.
+      if (clean.length() > SG_SEGMENT_MAX) {
+        int sp = clean.indexOf(' ', clean.length() - SG_SEGMENT_MAX);
+        clean = clean.substring(sp < 0 ? clean.length() - SG_SEGMENT_MAX : sp + 1);
+      }
       xSemaphoreTake(g_mtx, portMAX_DELAY);
       if (g_wsClosing || g_wsSession != g_session || !g_guarding) {
         xSemaphoreGive(g_mtx);
@@ -291,6 +301,7 @@ code:
           sgEmitStr("state", "ws", "connected");
           break;
         case WStype_DISCONNECTED:
+          g_streamGen++;
           if (g_wsConnected) sgEmitStr("state", "ws", "disconnected");
           g_wsConnected = false;
           g_streamAudio = false;
@@ -411,6 +422,7 @@ code:
     static void sgAiTask(void*) {
       static WiFiClientSecure tls;
       tls.setInsecure();                 // hackathon: no certificate pinning
+      tls.setHandshakeTimeout(12);       // seconds (the default is 120)
       uint32_t lastVersion = 0, lastCall = 0, lastSession = 0;
       int failStreak = 0;                // consecutive failed calls this session
       for (;;) {
@@ -425,11 +437,15 @@ code:
         matchId = g_wordMatchId; memcpy(matchName, g_wordMatchName, sizeof matchName);
         xSemaphoreGive(g_mtx);
         if (ver == lastVersion || text.length() == 0) continue;
-        if (!tls.connected() && ESP.getMaxAllocHeap() < 20000) {   // TLS needs ~17 KB blocks
+        // A new TLS session needs ~17 KB blocks and ~40 KB in all; skip the call
+        // rather than run out mid-handshake.
+        if (!tls.connected() && (ESP.getMaxAllocHeap() < 20000 || ESP.getFreeHeap() < 45000)) {
           lastCall = millis();
-          sgEmitStr("log", "error", String("ai: low heap, skipped (max block ") + ESP.getMaxAllocHeap() + ")");
+          sgEmitStr("log", "error", String("ai: low heap, skipped (free ") + ESP.getFreeHeap() +
+                                    ", max block " + ESP.getMaxAllocHeap() + ")");
           continue;
         }
+        uint32_t streamGen = g_streamGen;
         // lastVersion only advances on a valid verdict (below), so a failed call
         // is retried after the AI interval even if no new speech arrives.
         lastCall = millis();
@@ -497,6 +513,9 @@ code:
         // the session, so a verdict from a previous call can never land in this one.
         xSemaphoreTake(g_mtx, portMAX_DELAY);
         bool current = session == g_session && g_guarding;
+        // A SAFE that comes back after the speech stream dropped would show green
+        // while the board hears nothing: show it as UNSURE instead.
+        if (v == V_SAFE && (streamGen != g_streamGen || !g_wsConnected)) { v = V_UNSURE; reason = "STT lost"; }
         if (current && !g_scamLatched) {
           if (v != V_AIERR) {
             g_verdict = v; g_reason = reason;
@@ -656,7 +675,8 @@ code:
         if (!longFired && now - pressAt < 1500) want = g_guarding ? 0 : 1;
         pressAt = 0;
       }
-      if (g_guardReq >= 0) { want = g_guardReq; g_guardReq = -1; }
+      int8_t req = __atomic_exchange_n((int8_t*)&g_guardReq, (int8_t)-1, __ATOMIC_SEQ_CST);
+      if (req >= 0) want = req;
 
       if (want >= 0 && (bool)want != g_guarding) {
         if (want) {
@@ -840,7 +860,10 @@ code:
     }
     if (atech_action == "gain") {
       int g = atech_value.toInt();
-      if (g >= 1 && g <= 64) { g_gain = g; g_cfg.micGain = g; sgSaveSettings(); }
+      if (g >= 1 && g <= 64) {
+        SgSettings n = g_cfg; n.micGain = g;
+        if (sgSaveSettings(n)) { g_cfg.micGain = g; g_gain = g; } else atechFail("could not save");
+      }
       else atechFail("gain must be 1..64");
       atechDone();
     }
@@ -853,7 +876,8 @@ code:
       // only, never through sgEmit (so never to the network or the log). The
       // phone's token stops working.
       String t = sgNewToken();
-      Serial.printf("{\"type\":\"event\",\"payload\":{\"event_type\":\"state\",\"key\":\"api_token\",\"value\":\"%s\",\"source\":\"guardian\"}}\n", t.c_str());
+      if (!t.length()) atechFail("could not save the token");
+      else Serial.printf("{\"type\":\"event\",\"payload\":{\"event_type\":\"state\",\"key\":\"api_token\",\"value\":\"%s\",\"source\":\"guardian\"}}\n", t.c_str());
       t = String();
       atechDone();
     }

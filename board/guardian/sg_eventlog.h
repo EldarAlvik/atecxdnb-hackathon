@@ -84,13 +84,16 @@ static bool sgLogAppend(uint32_t seq, const char* json, size_t len) {
     g_segLines = 0;
   }
   sgSegPath(g_segStart[g_segCount - 1], path, sizeof path);
+  // One write per record: LittleFS commits an append on close, so a power cut
+  // loses the whole record rather than leaving half of one.
+  static char rec[SG_LOG_MAX_LINE + 16];          // API task only
+  int pl = snprintf(rec, sizeof rec, "%lu\t", (unsigned long)seq);
+  memcpy(rec + pl, json, len);
+  rec[pl + len] = '\n';
   File f = LittleFS.open(path, "a");
   if (!f) return false;
-  char pre[16];
-  int pl = snprintf(pre, sizeof pre, "%lu\t", (unsigned long)seq);
-  bool ok = f.write((const uint8_t*)pre, pl) == (size_t)pl &&
-            f.write((const uint8_t*)json, len) == len &&
-            f.write((const uint8_t*)"\n", 1) == 1;
+  size_t total = pl + len + 1;
+  bool ok = f.write((const uint8_t*)rec, total) == total;
   f.close();
   if (ok) { g_segLines++; g_logEvents++; g_logLastSeq = seq; }
   return ok;
@@ -113,7 +116,9 @@ static bool sgLogForEach(uint32_t since, F fn) {
       size_t n = f.readBytesUntil('\n', line, sizeof line - 1);
       line[n] = 0;
       char* tab = strchr(line, '\t');
-      if (!tab) continue;
+      // Skip anything that is not a whole record, so one bad line cannot break
+      // the JSON of the /events answer.
+      if (!tab || n < 3 || tab[1] != '{' || line[n - 1] != '}') continue;
       uint32_t seq = strtoul(line, nullptr, 10);
       if (seq <= since) continue;
       if (!fn(tab + 1, n - (tab + 1 - line))) { f.close(); return false; }

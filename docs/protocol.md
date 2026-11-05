@@ -10,7 +10,7 @@ There are three links:
 |---|---|---|
 | BLE GATT | First setup: Wi-Fi details in, device token out | LE Secure Connections, 6-digit passkey shown on the board's screen |
 | HTTP, port 80 | Status, settings, family words, event history | `Authorization: Bearer <token>` |
-| WebSocket, port 81 | Live events | `?token=<token>` or the same header |
+| WebSocket, port 81 | Live events | `?token=<token>` |
 | USB serial | Everything, for the laptop (`atech monitor`) | Physical access |
 
 The board is found on the LAN as `guardian.local` and through DNS-SD as service
@@ -113,7 +113,8 @@ Every request needs `Authorization: Bearer <token>`. Answers are JSON
 |---|---|
 | `401` | Missing or wrong token: `{"error":"unauthorized"}` |
 | `429` | 10 wrong tokens in a row: refused for 30 s |
-| `400` | Bad JSON or a bad value: `{"error":"<what is wrong>"}` |
+| `400` | Bad JSON, a bad value, or a body over 1 KB: `{"error":"<what is wrong>"}` |
+| `500` | The board could not save the change (nothing changed): `{"error":"could not save"}` |
 | `404` | Unknown path or member |
 | `503` | The board is low on memory and refused the request: `{"error":"low_memory"}` |
 
@@ -224,9 +225,10 @@ Answers `{"setup":true}`, then restarts the board into BLE setup mode.
 
 ## 3. WebSocket (port 81)
 
-`ws://guardian.local:81/?token=<token>` (or the `Authorization` header on the
-upgrade request). A wrong token is refused: either the upgrade fails with HTTP
-401, or the socket is closed right after it opens (the client must handle both). The board
+`ws://guardian.local:81/?token=<token>`. The token goes in the query string: the
+board does not read an `Authorization` header on the upgrade. A wrong token is
+refused: either the upgrade fails with HTTP 401 (the mock), or the socket is closed
+right after it opens (the board). Clients must handle both. The board
 takes at most **2** clients; a third is closed.
 
 The board's first message:
@@ -297,10 +299,13 @@ The ESP32-S3 has about 350 KB of free heap at boot, and the two TLS connections
 (Deepgram and Anthropic) need most of it. The firmware checks the heap and gives up
 features in this order rather than crash:
 
-1. Below 40 KB free: new WebSocket clients are refused (`degraded` `ws_server`).
+1. Below 40 KB free: new WebSocket clients are refused (`degraded` `ws_server`);
+   below 24 KB the connected ones are dropped too.
 2. Below 30 KB free: HTTP requests get `503 low_memory` (`degraded` `http`).
 3. The event log skips writes while the largest free block is below 8 KB
    (`degraded` `event_log`).
+4. A Claude call is skipped (an `error` event) when a new TLS session would not fit
+   (under 45 KB free or no 20 KB block).
 
 A feature comes back when memory recovers, and `degraded` in `/status` lists those
 that are off right now.

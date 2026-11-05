@@ -53,16 +53,14 @@ static void sgLoadSettings() {
   g_cfg.screenPct   = constrain(p.getUChar("bright", 100), 10, 100);
   p.end();
 }
-static void sgSaveSettings() {
+static bool sgSaveSettings(const SgSettings& c) {
   Preferences p;
-  if (!p.begin("sg", false)) return;
-  p.putUChar("gain", g_cfg.micGain);
-  p.putUChar("aiint", g_cfg.aiIntervalS);
-  p.putUChar("lang", g_cfg.lang);
-  p.putBool("latch", g_cfg.redLatch);
-  p.putULong("evmask", g_cfg.eventMask);
-  p.putUChar("bright", g_cfg.screenPct);
+  if (!p.begin("sg", false)) return false;
+  bool ok = p.putUChar("gain", c.micGain) && p.putUChar("aiint", c.aiIntervalS) &&
+            p.putUChar("lang", c.lang) && p.putBool("latch", c.redLatch) &&
+            p.putULong("evmask", c.eventMask) && p.putUChar("bright", c.screenPct);
   p.end();
+  return ok;
 }
 
 // ---------------- saved Wi-Fi ----------------
@@ -75,13 +73,14 @@ static void sgLoadWifi() {
   g_savedPass = p.getString("pass", "");
   p.end();
 }
-static void sgSaveWifi(const String& ssid, const String& pass) {
+static bool sgSaveWifi(const String& ssid, const String& pass) {
   Preferences p;
-  if (!p.begin("sgwifi", false)) return;
-  p.putString("ssid", ssid);
-  p.putString("pass", pass);
+  if (!p.begin("sgwifi", false)) return false;
+  // An empty password is stored as a zero-length string (putString returns 0).
+  bool ok = p.putString("ssid", ssid) == ssid.length() && p.putString("pass", pass) == pass.length();
   p.end();
-  g_savedSsid = ssid; g_savedPass = pass;
+  if (ok) { g_savedSsid = ssid; g_savedPass = pass; }
+  return ok;
 }
 static bool sgHasFallbackWifi() { return strlen(SG_WIFI_SSID) > 0; }
 
@@ -120,13 +119,16 @@ static void sgLoadToken() {
   g_hasToken = p.getBytes("tokh", g_tokenHash, 32) == 32;
   p.end();
 }
+// Returns "" if the token could not be saved (then the old one stays valid).
 static String sgNewToken() {
   uint8_t raw[32];
   esp_fill_random(raw, sizeof raw);
   uint8_t h[32];
   sgSha256(raw, sizeof raw, nullptr, 0, h);
   Preferences p;
-  if (p.begin("sgauth", false)) { p.putBytes("tokh", h, 32); p.end(); }
+  bool ok = p.begin("sgauth", false) && p.putBytes("tokh", h, 32) == 32;
+  p.end();
+  if (!ok) { memset(raw, 0, sizeof raw); return String(); }
   memcpy(g_tokenHash, h, 32);
   g_hasToken = true;
   static const char* hex = "0123456789abcdef";

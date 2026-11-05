@@ -108,8 +108,8 @@ static int addMember(const char* name, const char* word) {
 }
 
 static std::string match(const char* text, int* nfound = nullptr, int* firstId = nullptr) {
-  String out; uint8_t ids[4]; char names[4][SG_NAME_MAX + 1];
-  int n = sgWordsMatch(text, out, ids, names, 4);
+  String out; uint8_t ids[SG_MAX_MEMBERS]; char names[SG_MAX_MEMBERS][SG_NAME_MAX + 1];
+  int n = sgWordsMatch(text, out, ids, names, SG_MAX_MEMBERS);
   if (nfound) *nfound = n;
   if (firstId) *firstId = n ? ids[0] : 0;
   return out.c_str();
@@ -177,6 +177,18 @@ int main(int argc, char** argv) {
   CHECK(n == 2 && r.find("kanelbolle") == std::string::npos && r.find("elefant") == std::string::npos,
         "long text (5 KB) fully checked and redacted");
   CHECK(r.size() > 4000, "long text kept");
+
+  // Many matches (a fixed-size range list used to overflow): all must be replaced.
+  addMember("A", "foo bar");
+  addMember("B", "foo bar");
+  addMember("C", "foo bar");
+  addMember("D", "zap");
+  std::string many;
+  for (int i = 0; i < 120; i++) many += "foo bar ";
+  many += "zap";
+  r = match(many.c_str(), &n);
+  CHECK(r.find("zap") == std::string::npos && r.find("foo") == std::string::npos, "hundreds of matches all redacted");
+  CHECK(n == 4, "every member with a match reported");
 
   printf(failures ? "%d FAILED\n" : "OK\n", failures);
   return failures ? 1 : 0;

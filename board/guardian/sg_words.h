@@ -140,16 +140,18 @@ static const size_t SG_MATCH_AHEAD  = 160;      // look past the window for a ph
 // that start inside it) and appends it to `out` with every family word replaced.
 // New members found are added to ids/names. Returns how many bytes it consumed:
 // at least `len`, more if a replaced phrase ran past the window.
+// Matches mark bytes in a coverage map, so there is no limit on their number:
+// every matched byte is replaced, whatever else happens.
 static size_t sgMatchWindow(const char* text, size_t len, size_t ahead, String& out, const SgCand* cands, int nc,
                             uint8_t* ids, char (*names)[SG_NAME_MAX + 1], int maxIds, int& found) {
   static const size_t SPAN = SG_MATCH_WINDOW + SG_MATCH_AHEAD;
   static char norm[SPAN + 8];
   static SgTok toks[SPAN / 2 + 1];              // a token needs a letter and a separator
-  struct Range { uint16_t s, e; };
-  static Range ranges[SG_MATCH_WINDOW / 3 + 1]; // a word is at least 3 bytes
-  const int maxRanges = sizeof ranges / sizeof ranges[0];
-  int nt = sgTokenize(text, len + ahead, norm, sizeof norm, toks, sizeof toks / sizeof toks[0]);
-  int nr = 0;
+  static uint8_t covered[SPAN];
+  size_t span = len + ahead;
+  memset(covered, 0, span);
+  int nt = sgTokenize(text, span, norm, sizeof norm, toks, sizeof toks / sizeof toks[0]);
+  size_t consumed = len;
   char phrase[SG_WORD_MAX + 8]; uint8_t h[32];
   for (int c = 0; c < nc; c++) {
     bool hit = false;
@@ -159,7 +161,9 @@ static size_t sgMatchWindow(const char* text, size_t len, size_t ahead, String& 
       sgSha256(cands[c].salt, 16, (const uint8_t*)phrase, pl, h);
       if (!sgConstEq(h, cands[c].hash, 32)) continue;
       hit = true;
-      if (nr < maxRanges) ranges[nr++] = {toks[i].s, toks[i + cands[c].nwords - 1].e};
+      size_t e = toks[i + cands[c].nwords - 1].e;
+      memset(covered + toks[i].s, 1, e - toks[i].s);
+      if (e > consumed) consumed = e;
     }
     bool known = false;
     for (int k = 0; k < found; k++) known |= ids[k] == cands[c].id;
@@ -171,19 +175,20 @@ static size_t sgMatchWindow(const char* text, size_t len, size_t ahead, String& 
   }
   memset(phrase, 0, sizeof phrase);
   memset(norm, 0, sizeof norm);
-  // Sort ranges, skip overlaps, copy the text with the words replaced.
-  for (int a = 1; a < nr; a++)
-    for (int b = a; b > 0 && ranges[b].s < ranges[b - 1].s; b--) { Range t = ranges[b]; ranges[b] = ranges[b - 1]; ranges[b - 1] = t; }
-  size_t pos = 0;
-  for (int k = 0; k < nr; k++) {
-    if (ranges[k].e <= pos) continue;
-    size_t s = ranges[k].s < pos ? pos : ranges[k].s;
-    out.concat(text + pos, s - pos);
-    out += SG_REDACTED;
-    pos = ranges[k].e;
+  // Copy the text, one marker per run of covered bytes.
+  size_t i = 0;
+  while (i < consumed) {
+    size_t j = i;
+    if (covered[i]) {
+      while (j < consumed && covered[j]) j++;
+      out += SG_REDACTED;
+    } else {
+      while (j < consumed && !covered[j]) j++;
+      out.concat(text + i, j - i);
+    }
+    i = j;
   }
-  if (pos < len) { out.concat(text + pos, len - pos); pos = len; }
-  return pos;
+  return consumed;
 }
 
 // Checks one transcript segment. Fills `out` with the text where every spoken
