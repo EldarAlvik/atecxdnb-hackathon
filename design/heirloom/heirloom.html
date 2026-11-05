@@ -1,0 +1,107 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+  :root{--walnut:#6b4429;--walnut-d:#4a2d1a;--brass:#c9a35a;--brass-d:#8a6a2c;--brass-l:#f3dc9e}
+  body{margin:0;font-family:Georgia,"Times New Roman",serif}
+
+  /* ---------- living-room scene ---------- */
+  .room{position:relative;height:430px;border-radius:var(--radius,10px);overflow:hidden;
+        background:linear-gradient(180deg,#2f4a3f 0,#2a4238 62%,#22362e 62.2%)}
+  .room::before{content:"";position:absolute;inset:0;   /* warm lamp light from the left */
+        background:radial-gradient(60% 70% at 18% 30%,rgba(255,206,140,.35),transparent 70%)}
+  .frame{position:absolute;left:58%;top:34px;width:150px;height:110px;border:7px solid #b8924c;
+        background:linear-gradient(160deg,#c7b48f,#8f7a59);box-shadow:0 6px 14px rgba(0,0,0,.35)}
+  .lamp{position:absolute;left:7%;bottom:150px;width:120px;height:80px;
+        background:linear-gradient(#f1e2c2,#d9c39a);clip-path:polygon(18% 0,82% 0,100% 100%,0 100%);
+        box-shadow:0 0 60px rgba(255,210,150,.6)}
+  .lamp-stem{position:absolute;left:calc(7% + 56px);bottom:96px;width:8px;height:56px;background:#b8924c}
+  .lamp-base{position:absolute;left:calc(7% + 36px);bottom:90px;width:48px;height:10px;border-radius:5px;background:#9c7a3c}
+  .sideboard{position:absolute;left:0;right:0;bottom:0;height:92px;
+        background:repeating-linear-gradient(90deg,rgba(0,0,0,.05) 0 3px,transparent 3px 14px),
+                   linear-gradient(#8a5a36,#6e4528)}
+  .sideboard::before{content:"";position:absolute;left:0;right:0;top:0;height:10px;background:linear-gradient(#a97448,#8a5a36)}
+  .plant{position:absolute;right:9%;bottom:92px;width:46px;height:56px;border-radius:4px 4px 10px 10px;background:#e8dfd0}
+  .plant::after{content:"";position:absolute;left:-26px;bottom:44px;width:98px;height:90px;
+        background:radial-gradient(circle at 30% 60%,#5f8a4e 0 16px,transparent 17px),
+                   radial-gradient(circle at 70% 50%,#4f7a40 0 18px,transparent 19px),
+                   radial-gradient(circle at 50% 25%,#6c9858 0 17px,transparent 18px)}
+
+  /* ---------- the box ---------- */
+  .scene{position:absolute;left:50%;bottom:78px;transform:translateX(-50%);perspective:1200px}
+  .box{position:relative;width:250px;height:150px;transform-style:preserve-3d;transform:rotateX(-14deg) rotateY(-22deg)}
+  .wood{background:
+        repeating-linear-gradient(95deg,rgba(0,0,0,.10) 0 1px,transparent 1px 6px,rgba(255,255,255,.04) 6px 7px,transparent 7px 13px),
+        linear-gradient(var(--walnut),var(--walnut-d))}
+  .front,.top,.side{position:absolute}
+  .front{inset:0;border-radius:10px 10px 4px 4px;display:flex;align-items:center;justify-content:space-around;padding:0 26px;box-sizing:border-box;
+        box-shadow:inset 0 2px 0 rgba(255,255,255,.08),inset 0 -6px 10px rgba(0,0,0,.25)}
+  .top{left:0;top:0;width:250px;height:120px;transform-origin:center top;transform:rotateX(-90deg);filter:brightness(1.18);border-radius:10px}
+  .side{left:250px;top:0;width:120px;height:150px;transform-origin:left center;transform:rotateY(90deg);filter:brightness(.7)}
+  .shadow{position:absolute;left:-10px;right:-60px;bottom:-14px;height:24px;border-radius:50%;
+          background:rgba(0,0,0,.45);filter:blur(10px);transform:translateZ(-60px)}
+
+  /* jewel pilot light in a brass bezel */
+  .jewel{--c:#5fd27a;width:44px;height:44px;border-radius:50%;padding:6px;box-sizing:border-box;
+         background:radial-gradient(circle at 35% 30%,var(--brass-l),var(--brass) 45%,var(--brass-d));
+         box-shadow:0 2px 4px rgba(0,0,0,.5)}
+  .jewel i{display:block;width:100%;height:100%;border-radius:50%;
+         background:conic-gradient(from 20deg,rgba(255,255,255,.25),transparent 20%,rgba(255,255,255,.2) 40%,transparent 60%,rgba(255,255,255,.25) 80%,transparent),
+                    radial-gradient(circle at 40% 35%,#fff 0 6%,var(--c) 45%,color-mix(in srgb,var(--c) 60%,#000));
+         box-shadow:0 0 18px 5px color-mix(in srgb,var(--c) 55%,transparent)}
+  .jewel.amber{--c:#f2a93c}.jewel.red{--c:#e5533f}
+
+  /* brass push button */
+  .push{width:86px;height:86px;border-radius:50%;display:grid;place-items:center;
+        background:radial-gradient(circle at 50% 50%,#3a2414 0 60%,#2a190d 61% 100%);box-shadow:inset 0 3px 6px rgba(0,0,0,.6)}
+  .push i{width:68px;height:68px;border-radius:50%;
+        background:radial-gradient(circle at 36% 30%,#fff6d8 0 6%,var(--brass-l) 14%,var(--brass) 48%,var(--brass-d) 92%);
+        box-shadow:0 4px 0 #6d5221,0 8px 10px rgba(0,0,0,.45)}
+
+  .plaque{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);padding:2px 12px;border-radius:2px;
+          font-size:10px;letter-spacing:.22em;color:#4a3410;
+          background:linear-gradient(var(--brass-l),var(--brass));box-shadow:0 1px 2px rgba(0,0,0,.5)}
+
+  /* ---------- notes ---------- */
+  .notes{display:grid;grid-template-columns:1fr 1fr;gap:18px;padding:18px 4px 6px;font-family:var(--font-sans,system-ui)}
+  .notes h4{margin:0 0 6px;font-size:14px}
+  .notes p{margin:0;font-size:13px;color:var(--muted-foreground,#777);line-height:1.5}
+  .states{display:flex;gap:18px;align-items:center;margin-top:8px}
+  .states span{display:flex;align-items:center;gap:8px;font-size:13px}
+  .states .jewel{width:28px;height:28px;padding:4px}
+  .states .jewel i{box-shadow:0 0 8px 2px color-mix(in srgb,var(--c) 50%,transparent)}
+</style></head>
+<body>
+<div class="room">
+  <div class="frame"></div>
+  <div class="lamp"></div><div class="lamp-stem"></div><div class="lamp-base"></div>
+  <div class="sideboard"></div>
+  <div class="plant"></div>
+  <div class="scene">
+    <div class="box">
+      <div class="shadow"></div>
+      <div class="top wood"></div>
+      <div class="side wood"></div>
+      <div class="front wood">
+        <div class="jewel"><i></i></div>
+        <div class="push"><i></i></div>
+        <div class="plaque">HANSEN</div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="notes">
+  <div>
+    <h4>It looks like something they already own</h4>
+    <p>A solid walnut box like an old radio or mantel clock. It has a brass bell-push and a glass pilot lamp. There are no icons, no words like "HELP" or "CHECK", and no plastic, so nothing tells them it's "for old people". A brass plate with the family name makes it an heirloom, not a gadget.</p>
+  </div>
+  <div>
+    <h4>One lamp, one button</h4>
+    <p>Press the brass button when someone calls. The lamp answers:</p>
+    <div class="states">
+      <span><div class="jewel"><i></i></div>Family</span>
+      <span><div class="jewel amber"><i></i></div>Checking</span>
+      <span><div class="jewel red"><i></i></div>Hang up</span>
+    </div>
+  </div>
+</div>
+</body></html>
