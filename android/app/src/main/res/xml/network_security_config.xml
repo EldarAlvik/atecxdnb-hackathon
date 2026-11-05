@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The board serves its API over plain HTTP and WebSocket: the ESP32-S3 does not have the RAM for a
+  local TLS server next to its two TLS client connections (docs/protocol.md, section 7).
+
+  Cleartext is therefore allowed for *.local names only. The app never puts the board's IP address
+  in a URL: it always requests "guardian-board.local", and its own resolver (board/LocalDns.kt) maps
+  that name to the board's address and refuses any address that is not private, link-local or
+  loopback. Everything else, including any public host, stays HTTPS-only.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">local</domain>
+    </domain-config>
+</network-security-config>
