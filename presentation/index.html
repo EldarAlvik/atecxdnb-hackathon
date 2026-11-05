@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scam Call Guardian · ATEC x DNB hackathon</title>
+<style>
+  :root {
+    --bg0: #071820;
+    --bg1: #0b2530;
+    --bg2: #0f3340;
+    --panel: rgba(255,255,255,0.045);
+    --line: rgba(190,225,230,0.16);
+    --text: #eaf3f3;
+    --muted: #9db8bd;
+    --faint: #6f8f96;
+    --teal: #4fb3b0;
+    --green: #39c98a;
+    --yellow: #f2c443;
+    --red: #ee5d5d;
+    --W: 1600px;
+    --H: 900px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: var(--bg0); color: var(--text); overflow: hidden;
+    font-family: "Segoe UI", "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased; }
+
+  #stage { position: fixed; left: 50%; top: 50%; width: var(--W); height: var(--H);
+    transform-origin: 0 0; }
+  .slide { position: absolute; inset: 0; width: var(--W); height: var(--H);
+    padding: 80px 110px 90px; display: none; flex-direction: column; overflow: hidden;
+    background:
+      radial-gradient(1200px 700px at 85% -10%, rgba(79,179,176,0.13), transparent 60%),
+      radial-gradient(900px 600px at -10% 110%, rgba(30,90,120,0.25), transparent 60%),
+      linear-gradient(160deg, var(--bg1), var(--bg0) 70%); }
+  .slide.active { display: flex; }
+  .notes { display: none; }
+
+  /* type */
+  .kicker { font-size: 22px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--teal); font-weight: 600; margin-bottom: 18px; }
+  h1 { font-size: 112px; line-height: 1.0; font-weight: 700; letter-spacing: -0.02em; }
+  h2 { font-size: 60px; line-height: 1.08; font-weight: 650; letter-spacing: -0.015em; max-width: 1350px; }
+  .lead { font-size: 36px; line-height: 1.35; color: var(--muted); max-width: 1200px; }
+  .big { font-size: 34px; line-height: 1.35; }
+  .body { font-size: 28px; line-height: 1.4; color: var(--muted); }
+  .small { font-size: 22px; line-height: 1.4; color: var(--muted); }
+  strong { color: var(--text); font-weight: 650; }
+  .src { display: inline-block; font-size: 18px; color: var(--faint); border: 1px solid var(--line);
+    border-radius: 999px; padding: 3px 12px; letter-spacing: 0.02em; white-space: nowrap; vertical-align: middle; }
+  .g { color: var(--green); } .y { color: var(--yellow); } .r { color: var(--red); } .t { color: var(--teal); }
+  .grow { flex: 1; min-height: 0; }
+  .row { display: flex; gap: 40px; }
+  .col { display: flex; flex-direction: column; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 22px; padding: 28px 32px; }
+  .mt-s { margin-top: 18px; } .mt-m { margin-top: 36px; } .mt-l { margin-top: 56px; }
+  .foot { position: absolute; left: 110px; right: 110px; bottom: 34px; display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+
+  /* traffic-light dots */
+  .dots { display: inline-flex; gap: 10px; vertical-align: middle; }
+  .dot { width: 22px; height: 22px; border-radius: 50%; display: inline-block; }
+  .dot.g { background: var(--green); } .dot.y { background: var(--yellow); } .dot.r { background: var(--red); }
+
+  /* title slide */
+  .title-wrap { flex: 1; display: flex; align-items: center; gap: 80px; }
+  .promise { font-size: 44px; line-height: 1.3; color: var(--muted); margin-top: 34px; max-width: 900px; }
+  .promise strong { color: var(--text); }
+
+  /* story slide */
+  .quote { font-size: 40px; line-height: 1.35; font-style: italic; border-left: 6px solid var(--red); padding: 6px 0 6px 34px; }
+  .quote-en { font-size: 24px; color: var(--faint); margin-top: 14px; padding-left: 40px; }
+  .stat-num { font-size: 132px; font-weight: 700; line-height: 0.95; letter-spacing: -0.03em; }
+  .stat-num small { font-size: 52px; font-weight: 600; letter-spacing: 0; }
+  .stat-line { font-size: 28px; color: var(--muted); line-height: 1.4; }
+
+  /* defences timeline */
+  .tl { display: grid; grid-template-columns: 1fr 1fr 1.25fr 1fr; gap: 22px; margin-top: 40px; }
+  .tl .phase { font-size: 22px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); margin-bottom: 14px; font-weight: 600; }
+  .tl > div { display: flex; flex-direction: column; }
+  .tl .card { flex: 1; display: flex; flex-direction: column; gap: 14px; }
+  .tl .card h3 { font-size: 30px; font-weight: 650; line-height: 1.2; }
+  .tl .card p { font-size: 23px; line-height: 1.4; color: var(--muted); }
+  .tl .gap { border: 2px dashed var(--red); background: rgba(238,93,93,0.08); justify-content: center; text-align: center; }
+  .tl .gap h3 { font-size: 40px; color: var(--red); }
+  .miss { font-size: 22px; color: var(--yellow); font-weight: 600; }
+  .bar-strip { margin-top: 30px; display: flex; align-items: center; gap: 24px; font-size: 26px; color: var(--muted); }
+
+  /* product */
+  .legend-list { list-style: none; display: flex; flex-direction: column; gap: 30px; }
+  .legend-list li { display: flex; gap: 22px; align-items: flex-start; font-size: 30px; line-height: 1.3; }
+  .legend-list .n { flex: none; width: 50px; height: 50px; border-radius: 50%; border: 2px solid var(--teal); color: var(--teal);
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 24px; }
+  .legend-list span.sub { display: block; font-size: 22px; color: var(--muted); margin-top: 4px; }
+
+  /* pipeline */
+  .pipe { display: flex; align-items: stretch; gap: 0; margin-top: 50px; }
+  .pipe .step { flex: 1; background: var(--panel); border: 1px solid var(--line); border-radius: 22px; padding: 26px 24px; display: flex; flex-direction: column; gap: 12px; }
+  .pipe .step .ic { height: 64px; }
+  .pipe .step h3 { font-size: 29px; line-height: 1.15; font-weight: 650; }
+  .pipe .step p { font-size: 21px; line-height: 1.38; color: var(--muted); }
+  .pipe .arrow { flex: none; width: 46px; display: flex; align-items: center; justify-content: center; }
+  .code { font-family: Consolas, "Cascadia Mono", Menlo, monospace; font-size: 16px; white-space: nowrap; background: rgba(0,0,0,0.3); border-radius: 10px; padding: 8px 10px; color: #cfe7e6; }
+
+  /* storyboard */
+  .frames { display: grid; grid-template-columns: repeat(4, 1fr); gap: 26px; margin-top: 44px; }
+  .frame { display: flex; flex-direction: column; gap: 18px; }
+  .frame .time { font-size: 24px; color: var(--faint); font-weight: 600; letter-spacing: 0.06em; }
+  .frame .said { font-size: 22px; line-height: 1.38; color: var(--muted); font-style: italic; min-height: 128px; }
+  .mini { background: #e6ece8; border-radius: 26px; padding: 22px; display: flex; gap: 18px; align-items: center; box-shadow: 0 18px 40px rgba(0,0,0,0.35); }
+  .mini .lights { display: flex; flex-direction: column; gap: 10px; }
+  .mini .lights i { width: 34px; height: 34px; border-radius: 50%; display: block; background: #b9c4c0; }
+  .mini .lights i.on-r { background: var(--red); box-shadow: 0 0 22px var(--red); }
+  .mini .lights i.on-y { background: var(--yellow); box-shadow: 0 0 22px var(--yellow); }
+  .mini .lights i.on-g { background: var(--green); box-shadow: 0 0 22px var(--green); }
+  .mini .scr { flex: 1; aspect-ratio: 2 / 1; background: #0a1418; border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; justify-content: center; gap: 4px; }
+  .mini .scr b { font-size: 21px; letter-spacing: 0.08em; }
+  .mini .scr span { font-size: 21px; color: #e9f2f2; line-height: 1.2; }
+  .frame .cap { font-size: 22px; color: var(--muted); line-height: 1.35; }
+
+  /* app */
+  .feat { display: flex; flex-direction: column; gap: 34px; }
+  .feat .item h3 { font-size: 34px; font-weight: 650; margin-bottom: 8px; }
+  .feat .item p { font-size: 25px; line-height: 1.4; color: var(--muted); }
+
+  /* evals */
+  .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 14px 22px; }
+  .tile .k { font-size: 21px; color: var(--muted); }
+  .tile .v { font-size: 42px; font-weight: 700; color: var(--faint); letter-spacing: 0.02em; margin-top: 2px; }
+  .tile .d { font-size: 18px; color: var(--faint); margin-top: 2px; }
+  .placeholder-tag { display: inline-block; font-size: 19px; color: var(--yellow); border: 1px dashed var(--yellow); border-radius: 999px; padding: 4px 14px; }
+  .adv { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .adv .card { padding: 18px 22px; }
+  .adv h4 { font-size: 23px; font-weight: 650; margin-bottom: 6px; }
+  .adv p { font-size: 19px; line-height: 1.38; color: var(--muted); }
+
+  /* 2x2 */
+  .quad-wrap { display: grid; grid-template-columns: 60px 1fr; grid-template-rows: 1fr 54px; gap: 0; flex: 1; margin-top: 30px; min-height: 0; }
+  .yaxis { writing-mode: vertical-rl; transform: rotate(180deg); display: flex; justify-content: space-between; font-size: 21px; color: var(--muted); letter-spacing: 0.06em; padding: 8px 0; }
+  .xaxis { grid-column: 2; display: flex; justify-content: space-between; align-items: center; font-size: 21px; color: var(--muted); letter-spacing: 0.06em; padding: 0 8px; }
+  .quad { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 14px; }
+  .q { border: 1px solid var(--line); border-radius: 18px; padding: 20px 24px; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 10px; background: var(--panel); position: relative; }
+  .q .ql { width: 100%; font-size: 19px; color: var(--faint); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px; }
+  .chip { font-size: 22px; padding: 7px 16px; border-radius: 999px; border: 1px solid var(--line); background: rgba(255,255,255,0.04); }
+  .chip em { font-style: normal; color: var(--faint); font-size: 18px; }
+  .q.us { border: 2px solid var(--green); background: rgba(57,201,138,0.08); align-content: center; justify-content: center; }
+  .us-name { font-size: 40px; font-weight: 700; display: flex; align-items: center; gap: 16px; }
+
+  /* business */
+  .price-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+  .price-cards .card { padding: 24px 28px; }
+  .price-cards .who { font-size: 22px; color: var(--muted); }
+  .price-cards .p { font-size: 54px; font-weight: 700; margin: 6px 0 2px; }
+  .price-cards .p small { font-size: 24px; font-weight: 500; color: var(--muted); }
+  .price-cards .m { font-size: 20px; color: var(--faint); }
+
+  /* gtm */
+  .steps { display: flex; gap: 14px; margin-top: 34px; }
+  .steps .s { flex: 1; border-top: 4px solid var(--line); padding-top: 16px; }
+  .steps .s.now { border-top-color: var(--green); }
+  .steps .s .n { font-size: 20px; color: var(--faint); font-weight: 700; }
+  .steps .s p { font-size: 23px; line-height: 1.35; margin-top: 6px; }
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+  .kpis .tile .v { color: var(--text); font-size: 40px; }
+
+  /* privacy */
+  .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 22px 40px; margin-top: 40px; }
+  .check { display: flex; gap: 20px; align-items: flex-start; }
+  .check .box { flex: none; width: 40px; height: 40px; border: 2px solid var(--yellow); border-radius: 10px; margin-top: 4px; }
+  .check h3 { font-size: 30px; font-weight: 650; line-height: 1.2; }
+  .check p { font-size: 22px; color: var(--muted); line-height: 1.38; margin-top: 4px; }
+
+  /* roadmap */
+  .road { position: relative; margin-top: 46px; }
+  .road .axis { height: 6px; background: linear-gradient(90deg, var(--teal), var(--green)); border-radius: 3px; }
+  .road .ms { display: grid; grid-template-columns: repeat(5, 1fr); gap: 18px; margin-top: 22px; }
+  .road .ms div .w { font-size: 20px; color: var(--teal); font-weight: 700; letter-spacing: 0.06em; }
+  .road .ms div p { font-size: 23px; line-height: 1.35; margin-top: 6px; }
+  .ask { border: 2px solid var(--green); background: rgba(57,201,138,0.07); border-radius: 24px; padding: 30px 36px; }
+  .ask h3 { font-size: 36px; margin-bottom: 14px; }
+  .ask ol { font-size: 28px; line-height: 1.5; padding-left: 36px; }
+  .ask ol li::marker { color: var(--green); font-weight: 700; }
+
+  /* chrome */
+  #counter { position: fixed; right: 22px; bottom: 16px; font-size: 15px; color: var(--faint); letter-spacing: 0.08em; z-index: 20; font-variant-numeric: tabular-nums; }
+  #progress { position: fixed; left: 0; bottom: 0; height: 3px; background: var(--teal); z-index: 20; transition: width 0.25s ease; }
+  #notes-panel { position: fixed; left: 0; right: 0; bottom: 0; max-height: 38vh; overflow: auto; z-index: 30;
+    background: rgba(4,14,18,0.96); border-top: 2px solid var(--teal); padding: 18px 28px 30px; font-size: 17px; line-height: 1.5; color: #d6e6e6; display: none; }
+  body.show-notes #notes-panel { display: block; }
+  #notes-panel .hdr { font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--teal); margin-bottom: 8px; }
+  #hint { position: fixed; left: 22px; bottom: 16px; font-size: 14px; color: var(--faint); z-index: 20; opacity: 0.8; }
+
+  @media print {
+    @page { size: 1600px 900px; margin: 0; }
+    html, body { overflow: visible; height: auto; background: var(--bg0); }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    #stage { position: static; transform: none !important; width: var(--W); height: auto; }
+    .slide { display: flex !important; position: relative; break-after: page; page-break-after: always; }
+    .slide:last-child { break-after: auto; page-break-after: auto; }
+    #counter, #progress, #notes-panel, #hint { display: none !important; }
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+
+<!-- 1 TITLE -->
+<section class="slide" data-title="Scam Call Guardian">
+  <div class="kicker">ATEC x DNB hackathon · 2026</div>
+  <div class="title-wrap">
+    <div style="flex:1">
+      <h1>Scam Call<br>Guardian</h1>
+      <p class="promise">A traffic light next to the phone that <strong>hears a scam while the call is happening</strong>, before the BankID code is read out.</p>
+    </div>
+    <svg width="360" height="520" viewBox="0 0 360 520" aria-label="Device with three lights">
+      <rect x="40" y="20" width="280" height="480" rx="60" fill="#e6ece8"/>
+      <rect x="40" y="20" width="280" height="480" rx="60" fill="none" stroke="#ffffff" stroke-opacity="0.5" stroke-width="2"/>
+      <circle cx="180" cy="120" r="56" fill="#ee5d5d"/>
+      <circle cx="180" cy="120" r="76" fill="#ee5d5d" opacity="0.18"/>
+      <circle cx="180" cy="255" r="56" fill="#f2c443"/>
+      <circle cx="180" cy="390" r="56" fill="#39c98a"/>
+      <text x="180" y="138" text-anchor="middle" font-size="52" font-weight="700" fill="#fff">!</text>
+      <text x="180" y="273" text-anchor="middle" font-size="50" font-weight="700" fill="#5a4410">?</text>
+      <path d="M156 390 l16 16 l32 -34" stroke="#0d3a28" stroke-width="10" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </div>
+  <aside class="notes">
+    Open calm. "Every week someone's mother or grandfather in Norway gets a call from 'the bank' or 'the police'. We built a small box that sits next to the phone, listens to the call, and turns red while the scam is happening, not after the money is gone."
+    Point at the three lights: green means no warning signs yet, yellow means be careful, red means scam. Each light also has a symbol, so it works for colour-blind users.
+    ~30 s.
+  </aside>
+</section>
+
+<!-- 2 PROBLEM STORY -->
+<section class="slide" data-title="The problem">
+  <div class="kicker">The problem</div>
+  <div class="row grow" style="gap:80px; align-items:center;">
+    <div class="col" style="flex:1.25; gap:28px;">
+      <div class="big" style="color:var(--muted)">Bergen, Tuesday 11:04. Ingrid, 82, picks up.</div>
+      <div>
+        <div class="quote">«Hei, dette er Martin fra DNB sikkerhet. Noen prøver å tømme kontoen din. Les opp koden fra BankID, så stopper vi det.»</div>
+        <div class="quote-en">"Martin from DNB security. Someone is emptying your account. Read me your BankID code and we'll stop it."</div>
+      </div>
+      <div class="big">Four minutes later, her savings are gone. <strong>She approved every step herself.</strong></div>
+      <div class="small">Illustrative case built from typical Norwegian fake-bank calls.</div>
+    </div>
+    <div class="col" style="flex:1; gap:30px;">
+      <div>
+        <div class="stat-num r">962<small> MNOK</small></div>
+        <div class="stat-line">lost to payment fraud in Norway in 2025 (1,227 MNOK in 2024) <span class="src">Finanstilsynet 2025</span></div>
+      </div>
+      <div>
+        <div class="stat-num" style="font-size:96px">~53%</div>
+        <div class="stat-line">came from manipulation: <strong>the victim made the payment</strong> <span class="src">Finanstilsynet 2025</span></div>
+      </div>
+      <div class="stat-line"><strong>NOK 3.3 bn</strong> in fraud attempts against DNB and its customers in 2025 <span class="src">DNB 2026</span></div>
+    </div>
+  </div>
+  <aside class="notes">
+    Tell the story slowly, it's the emotional anchor. Ingrid is invented, but the script is exactly what DNB and the police warn about: "DNB security", urgency, read me the BankID code.
+    Then the numbers: 962 million kroner lost in 2025, down from 1.2 billion in 2024 but rising again in the second half. More than half is manipulation: the victim pays themselves, so it counts as authorised and they usually carry the full loss. DNB alone saw 3.3 billion kroner in attempts last year.
+    ~50 s.
+  </aside>
+</section>
+
+<!-- 3 WHY DEFENCES MISS -->
+<section class="slide" data-title="Why existing defences miss it">
+  <div class="kicker">Why existing defences miss it</div>
+  <h2>Every defence works before the call or after the payment. <span class="r">Nobody listens during the call.</span></h2>
+  <div class="tl">
+    <div>
+      <div class="phase">Before it rings</div>
+      <div class="card">
+        <h3>Telco number blocking</h3>
+        <p>Telia blocked 95M scam calls in 2025.</p>
+        <div class="miss">Misses: a fresh or real number</div>
+        <span class="src">Telia 2026</span>
+      </div>
+    </div>
+    <div>
+      <div class="phase">On pick-up</div>
+      <div class="card">
+        <h3>"Is my bank calling?" apps</h3>
+        <p>Monzo, Revolut. Not in DNB.</p>
+        <div class="miss">Misses: fake police, "grandchild"</div>
+        <span class="src">Competitor scan 2026</span>
+      </div>
+    </div>
+    <div>
+      <div class="phase" style="color:var(--red)">During the call</div>
+      <div class="card gap">
+        <h3>Nothing in Norway</h3>
+        <p>Pixel and Galaxy live scam AI covers 13 countries. Norway and Norwegian are not among them.</p>
+        <span class="src" style="align-self:center">Google support 2026</span>
+      </div>
+    </div>
+    <div>
+      <div class="phase">After paying</div>
+      <div class="card">
+        <h3>Bank transaction checks</h3>
+        <p>DNB stops ~90% of attempts.</p>
+        <div class="miss">Misses: payments the victim approved</div>
+        <span class="src">DNB 2026</span>
+      </div>
+    </div>
+  </div>
+  <div class="bar-strip">
+    <span class="dot y" style="flex:none"></span>
+    <span>The new EU refund rule (PSR) covers only fake-bank calls. <strong>Fake police, investment and romance victims keep losing.</strong></span>
+    <span class="src">EU PSR 2025</span>
+  </div>
+  <aside class="notes">
+    Walk left to right along a call. Telcos block numbers before it rings, but a scammer on a fresh foreign number or a real mobile gets through. Bank call-status apps answer one question, "is my bank calling?", and DNB doesn't have one yet; they don't help when the caller says they're the police. Banks stop most attempts at the transaction, but not the ones the customer approves.
+    The middle is empty. Google's live scam detection exists, on Pixel 9 and Galaxy S26, in 13 countries. Norway isn't one, and it doesn't speak Norwegian.
+    And the coming EU refund rule only covers people tricked by someone pretending to be their own bank. Everyone else still pays.
+    ~50 s.
+  </aside>
+</section>
+
+<!-- 4 PRODUCT -->
+<section class="slide" data-title="The product">
+  <div class="kicker">The product</div>
+  <h2>A small box next to any phone</h2>
+  <div class="row grow" style="align-items:center; gap:60px;">
+    <svg width="820" height="560" viewBox="0 0 820 560" aria-label="Phone on speaker next to the Guardian device">
+      <!-- phone -->
+      <rect x="40" y="70" width="230" height="440" rx="36" fill="#12313b" stroke="#4d7a83" stroke-width="3"/>
+      <rect x="58" y="110" width="194" height="360" rx="14" fill="#0a1d24"/>
+      <text x="155" y="165" text-anchor="middle" font-size="22" fill="#9db8bd">Ukjent nummer</text>
+      <text x="155" y="205" text-anchor="middle" font-size="30" fill="#eaf3f3" font-weight="600">03:12</text>
+      <circle cx="155" cy="300" r="40" fill="#1d4955"/>
+      <path d="M140 288 h10 l14 -12 v48 l-14 -12 h-10 z" fill="#eaf3f3"/>
+      <text x="155" y="372" text-anchor="middle" font-size="20" fill="#9db8bd">Høyttaler på</text>
+      <circle cx="155" cy="430" r="22" fill="#ee5d5d"/>
+      <!-- sound waves -->
+      <path d="M300 250 q22 40 0 80" stroke="#4fb3b0" stroke-width="5" fill="none" stroke-linecap="round" opacity="0.9"/>
+      <path d="M325 225 q36 65 0 130" stroke="#4fb3b0" stroke-width="5" fill="none" stroke-linecap="round" opacity="0.6"/>
+      <path d="M350 200 q50 90 0 180" stroke="#4fb3b0" stroke-width="5" fill="none" stroke-linecap="round" opacity="0.35"/>
+      <!-- device -->
+      <rect x="420" y="110" width="360" height="370" rx="44" fill="#e6ece8"/>
+      <!-- mic holes -->
+      <circle cx="580" cy="138" r="4" fill="#8a9893"/><circle cx="600" cy="138" r="4" fill="#8a9893"/><circle cx="620" cy="138" r="4" fill="#8a9893"/>
+      <!-- lights -->
+      <circle cx="490" cy="205" r="34" fill="#ee5d5d"/>
+      <circle cx="490" cy="205" r="50" fill="#ee5d5d" opacity="0.2"/>
+      <text x="490" y="220" text-anchor="middle" font-size="38" font-weight="700" fill="#fff">!</text>
+      <circle cx="490" cy="295" r="34" fill="#c9d1cd"/>
+      <circle cx="490" cy="385" r="34" fill="#c9d1cd"/>
+      <!-- screen 160x80 => 2:1 -->
+      <rect x="560" y="180" width="190" height="95" rx="10" fill="#0a1418"/>
+      <text x="575" y="216" font-size="20" font-weight="700" fill="#ee5d5d" letter-spacing="2">SVINDEL</text>
+      <text x="575" y="246" font-size="18" fill="#eaf3f3">Ber om BankID-kode</text>
+      <!-- button -->
+      <circle cx="655" cy="385" r="46" fill="#cfd8d4" stroke="#9eaaa5" stroke-width="3"/>
+      <circle cx="655" cy="385" r="34" fill="#4fb3b0"/>
+      <text x="655" y="392" text-anchor="middle" font-size="18" font-weight="700" fill="#06363a">VAKT</text>
+      <!-- callout numbers -->
+      <g font-size="22" font-weight="700" text-anchor="middle">
+        <circle cx="600" cy="80" r="22" fill="#0b2530" stroke="#4fb3b0" stroke-width="2"/><text x="600" y="88" fill="#4fb3b0">1</text>
+        <line x1="600" y1="102" x2="600" y2="128" stroke="#4fb3b0" stroke-width="2"/>
+        <circle cx="400" cy="205" r="22" fill="#0b2530" stroke="#4fb3b0" stroke-width="2"/><text x="400" y="213" fill="#4fb3b0">2</text>
+        <line x1="422" y1="205" x2="452" y2="205" stroke="#4fb3b0" stroke-width="2"/>
+        <circle cx="800" cy="228" r="0" fill="none"/>
+        <circle cx="790" cy="228" r="22" fill="#0b2530" stroke="#4fb3b0" stroke-width="2"/><text x="790" y="236" fill="#4fb3b0">3</text>
+        <circle cx="655" cy="520" r="22" fill="#0b2530" stroke="#4fb3b0" stroke-width="2"/><text x="655" y="528" fill="#4fb3b0">4</text>
+        <line x1="655" y1="498" x2="655" y2="433" stroke="#4fb3b0" stroke-width="2"/>
+      </g>
+    </svg>
+    <ul class="legend-list" style="flex:1">
+      <li><span class="n">1</span><div>Microphone<span class="sub">hears the call on speakerphone</span></div></li>
+      <li><span class="n">2</span><div>Traffic light<span class="sub"><span class="g">green</span> no warning signs · <span class="y">yellow</span> careful · <span class="r">red</span> scam</span></div></li>
+      <li><span class="n">3</span><div>Screen says why<span class="sub">in the call's language: "Ber om BankID-kode"</span></div></li>
+      <li><span class="n">4</span><div>One button<span class="sub">press to guard this call</span></div></li>
+    </ul>
+  </div>
+  <div class="foot"><span class="small">ESP32-S3 on the Atech 14-port board · LED grid · 160×80 screen · Wi-Fi</span></div>
+  <aside class="notes">
+    This is the whole product from the user's side. It doesn't care what phone you have: landline, old mobile, new mobile. Put the call on speaker, press the button, and the box listens.
+    The light is the message. Green is "no warning signs yet", deliberately not "safe". The screen gives a short reason in the language of the call, so Ingrid sees "Ber om BankID-kode", "asks for BankID code", and knows why to hang up.
+    Hardware is an ESP32-S3 on the Atech board we were given.
+    ~45 s.
+  </aside>
+</section>
+
+<!-- 5 HOW IT WORKS -->
+<section class="slide" data-title="How it works">
+  <div class="kicker">How it works</div>
+  <h2>From spoken word to red light in seconds</h2>
+  <div class="pipe">
+    <div class="step">
+      <svg class="ic" viewBox="0 0 64 64" width="64" height="64"><rect x="22" y="6" width="20" height="34" rx="10" fill="none" stroke="#4fb3b0" stroke-width="4"/><path d="M14 30 a18 18 0 0 0 36 0" fill="none" stroke="#4fb3b0" stroke-width="4"/><line x1="32" y1="48" x2="32" y2="58" stroke="#4fb3b0" stroke-width="4"/></svg>
+      <h3>Microphone</h3>
+      <p>ESP32-S3 streams the call audio</p>
+    </div>
+    <div class="arrow"><svg width="34" height="34" viewBox="0 0 34 34"><path d="M8 4 l16 13 l-16 13" fill="none" stroke="#6f8f96" stroke-width="4" stroke-linecap="round"/></svg></div>
+    <div class="step">
+      <svg class="ic" viewBox="0 0 64 64" width="64" height="64"><g stroke="#4fb3b0" stroke-width="4" stroke-linecap="round"><line x1="8" y1="26" x2="8" y2="38"/><line x1="18" y1="16" x2="18" y2="48"/><line x1="28" y1="22" x2="28" y2="42"/><line x1="38" y1="10" x2="38" y2="54"/><line x1="48" y1="20" x2="48" y2="44"/><line x1="58" y1="28" x2="58" y2="36"/></g></svg>
+      <h3>Live speech-to-text</h3>
+      <p>Deepgram nova-3, Norwegian + English</p>
+    </div>
+    <div class="arrow"><svg width="34" height="34" viewBox="0 0 34 34"><path d="M8 4 l16 13 l-16 13" fill="none" stroke="#6f8f96" stroke-width="4" stroke-linecap="round"/></svg></div>
+    <div class="step">
+      <svg class="ic" viewBox="0 0 64 64" width="64" height="64"><circle cx="32" cy="32" r="24" fill="none" stroke="#4fb3b0" stroke-width="4"/><path d="M32 18 v14 l10 6" fill="none" stroke="#4fb3b0" stroke-width="4" stroke-linecap="round"/></svg>
+      <h3>Every ~6 s</h3>
+      <p>Rolling transcript to Claude Haiku</p>
+    </div>
+    <div class="arrow"><svg width="34" height="34" viewBox="0 0 34 34"><path d="M8 4 l16 13 l-16 13" fill="none" stroke="#6f8f96" stroke-width="4" stroke-linecap="round"/></svg></div>
+    <div class="step">
+      <svg class="ic" viewBox="0 0 64 64" width="64" height="64"><path d="M14 10 h-4 v44 h4 M50 10 h4 v44 h-4" fill="none" stroke="#4fb3b0" stroke-width="4"/><line x1="22" y1="24" x2="42" y2="24" stroke="#4fb3b0" stroke-width="4"/><line x1="22" y1="38" x2="36" y2="38" stroke="#4fb3b0" stroke-width="4"/></svg>
+      <h3>Verdict + reason</h3>
+      <div class="code">{"verdict":"scam",<br>&nbsp;"reason":<br>&nbsp;"Ber om BankID-kode"}</div>
+    </div>
+    <div class="arrow"><svg width="34" height="34" viewBox="0 0 34 34"><path d="M8 4 l16 13 l-16 13" fill="none" stroke="#6f8f96" stroke-width="4" stroke-linecap="round"/></svg></div>
+    <div class="step" style="border-color:rgba(238,93,93,0.6)">
+      <svg class="ic" viewBox="0 0 64 64" width="64" height="64"><circle cx="20" cy="32" r="12" fill="#ee5d5d"/><rect x="38" y="20" width="10" height="24" rx="2" fill="none" stroke="#ee5d5d" stroke-width="4"/><path d="M40 20 v-6 a3 3 0 0 1 6 0 v6" fill="none" stroke="#ee5d5d" stroke-width="4"/></svg>
+      <h3>Light + screen</h3>
+      <p><strong>Scam latches red</strong> for the rest of the call</p>
+    </div>
+  </div>
+  <div class="mt-l">
+    <svg width="1380" height="150" viewBox="0 0 1380 150" aria-label="Latency timeline">
+      <line x1="40" y1="70" x2="1340" y2="70" stroke="#2c4c55" stroke-width="6" stroke-linecap="round"/>
+      <rect x="170" y="58" width="1170" height="24" rx="12" fill="#ee5d5d" opacity="0.4"/>
+      <rect x="170" y="58" width="1170" height="24" rx="12" fill="none" stroke="#ee5d5d" stroke-width="2" stroke-dasharray="6 6"/>
+      <circle cx="40" cy="70" r="14" fill="#f2c443"/>
+      <text x="40" y="125" font-size="24" fill="#eaf3f3" text-anchor="start">0 s · «les opp BankID-koden»</text>
+      <text x="170" y="30" font-size="22" fill="#9db8bd" text-anchor="middle">2 s</text>
+      <text x="1340" y="30" font-size="22" fill="#9db8bd" text-anchor="end">10 s</text>
+      <text x="820" y="125" font-size="26" fill="#eaf3f3" text-anchor="middle" font-weight="600">Red light lands 2-10 s after the telling sentence</text>
+    </svg>
+  </div>
+  <div class="foot"><span class="small">≈ NOK 1 per 10-minute call in cloud cost</span><span class="src">Team estimate, list prices 2026</span></div>
+  <aside class="notes">
+    Five steps. The board streams audio to Deepgram's nova-3 model, which transcribes Norwegian and English live. About every six seconds, if there's new text, we send the rolling transcript to Claude Haiku with a short system prompt. It answers in compact JSON: a verdict and a reason of at most eight words, in the call's language.
+    One design decision matters a lot: once it says scam, the light stays red for the rest of the call. A scammer can't talk it back to green.
+    Latency: the red light comes two to ten seconds after the sentence that gives it away. A fake-bank call runs for minutes, so that's well before the code is read out.
+    Cost is about one krone per ten-minute call, mostly speech-to-text.
+    ~55 s.
+  </aside>
+</section>
+
+<!-- 6 DEMO STORYBOARD -->
+<section class="slide" data-title="Live demo">
+  <div class="kicker">Live demo · storyboard</div>
+  <h2>One fake-bank call, four moments</h2>
+  <div class="frames">
+    <div class="frame">
+      <div class="time">00:06</div>
+      <div class="said">"Hei, er det Ingrid? Det er Martin fra DNB."</div>
+      <div class="mini"><div class="lights"><i></i><i></i><i class="on-g"></i></div><div class="scr"><b class="g">OK</b><span>Ingen faresignaler</span></div></div>
+      <div class="cap">Ordinary greeting. Green means <strong>no warning signs yet</strong>.</div>
+    </div>
+    <div class="frame">
+      <div class="time">00:24</div>
+      <div class="said">"Vi ser mistenkelig aktivitet på kontoen din."</div>
+      <div class="mini"><div class="lights"><i></i><i class="on-y"></i><i></i></div><div class="scr"><b class="y">VÆR OBS</b><span>Sier de er banken</span></div></div>
+      <div class="cap">Claims to be the bank, adds urgency. <strong>Yellow</strong>.</div>
+    </div>
+    <div class="frame">
+      <div class="time">00:41</div>
+      <div class="said">"Les opp koden fra BankID-appen, så stopper vi det."</div>
+      <div class="mini"><div class="lights"><i class="on-r"></i><i></i><i></i></div><div class="scr"><b class="r">SVINDEL</b><span>Ber om BankID-kode</span></div></div>
+      <div class="cap">Asks for the BankID code. <strong>Red</strong>, about 5 s later.</div>
+    </div>
+    <div class="frame">
+      <div class="time">01:30</div>
+      <div class="said">"Alt er i orden nå, du kan stole på meg."</div>
+      <div class="mini"><div class="lights"><i class="on-r"></i><i></i><i></i></div><div class="scr"><b class="r">SVINDEL</b><span>Ber om BankID-kode</span></div></div>
+      <div class="cap">Calm talk can't undo it. <strong>Red stays latched</strong>; family app alerted.</div>
+    </div>
+  </div>
+  <aside class="notes">
+    If the live demo works, run it now: one of us plays Martin from "DNB security" on speaker. If the Wi-Fi fails, use this slide as the backup.
+    Frame 1: greeting, green, and the screen literally says "no warning signs", not "safe".
+    Frame 2: "we see suspicious activity on your account". Claiming to be the bank plus urgency gives yellow.
+    Frame 3: "read me the code from the BankID app". Red within a few seconds, reason "asks for BankID code".
+    Frame 4: the scammer switches to reassurance. Doesn't matter, red is latched, and the daughter's phone has already buzzed.
+    ~50 s (longer if live).
+  </aside>
+</section>
+
+<!-- 7 FAMILY APP -->
+<section class="slide" data-title="Family app">
+  <div class="kicker">For the adult child</div>
+  <h2>The family knows while the call is still going</h2>
+  <div class="row grow" style="align-items:center; gap:90px;">
+    <svg width="330" height="528" viewBox="0 0 400 640" aria-label="Android companion app">
+      <rect x="20" y="10" width="360" height="620" rx="48" fill="#12313b" stroke="#4d7a83" stroke-width="3"/>
+      <rect x="40" y="50" width="320" height="550" rx="20" fill="#0a1d24"/>
+      <text x="64" y="96" font-size="24" font-weight="700" fill="#eaf3f3">Mammas vakt</text>
+      <circle cx="330" cy="88" r="9" fill="#39c98a"/>
+      <!-- alert card -->
+      <rect x="58" y="120" width="284" height="150" rx="16" fill="#3a1618" stroke="#ee5d5d" stroke-width="2"/>
+      <circle cx="90" cy="156" r="16" fill="#ee5d5d"/><text x="90" y="163" text-anchor="middle" font-size="22" font-weight="700" fill="#fff">!</text>
+      <text x="118" y="152" font-size="20" font-weight="700" fill="#ffd6d6">SVINDEL · nå</text>
+      <text x="118" y="176" font-size="17" fill="#e8b7b7">samtale startet 11:04</text>
+      <text x="76" y="214" font-size="21" fill="#ffffff">Ber om BankID-kode</text>
+      <rect x="76" y="230" width="140" height="28" rx="14" fill="#ee5d5d"/><text x="146" y="250" text-anchor="middle" font-size="16" font-weight="700" fill="#fff">Ring mamma</text>
+      <!-- history -->
+      <text x="64" y="312" font-size="17" fill="#9db8bd" letter-spacing="2">HISTORIKK</text>
+      <g font-size="18" fill="#eaf3f3">
+        <circle cx="74" cy="345" r="8" fill="#39c98a"/><text x="92" y="351">I går 14:20 · Legekontoret</text>
+        <circle cx="74" cy="385" r="8" fill="#f2c443"/><text x="92" y="391">Man. 10:02 · Ukjent tilbud</text>
+        <circle cx="74" cy="425" r="8" fill="#39c98a"/><text x="92" y="431">Søn. 18:45 · Familie</text>
+      </g>
+      <!-- safe word -->
+      <rect x="58" y="462" width="284" height="110" rx="16" fill="#102a33" stroke="#2c4c55"/>
+      <text x="76" y="494" font-size="17" fill="#9db8bd" letter-spacing="2">FAMILIENS KODEORD</text>
+      <text x="76" y="534" font-size="26" font-weight="700" fill="#eaf3f3">• • • • • • •</text>
+      <text x="76" y="560" font-size="15" fill="#9db8bd">Vises aldri på boksen</text>
+    </svg>
+    <div class="feat" style="flex:1">
+      <div class="item"><h3><span class="r">●</span> Live alerts</h3><p>Red or yellow reaches the phone of the adult child the moment it happens.</p></div>
+      <div class="item"><h3><span class="t">●</span> Call history</h3><p>Verdict, short reason and time for each guarded call. No audio, no transcript.</p></div>
+      <div class="item"><h3><span class="g">●</span> Family safe word</h3><p>A "grandchild in trouble" who can't say the family word isn't family.</p></div>
+      <div class="small">Pairs over Bluetooth with a passkey shown on the box's screen. Talks to the box over a local HTTP / WebSocket API.</div>
+    </div>
+  </div>
+  <aside class="notes">
+    The person who buys this is usually the daughter or son, not the 82-year-old. The Android app is for them.
+    Live alerts: the moment the box goes red, their phone buzzes with the reason, and one tap calls mum. The scammer's "don't tell anyone" stops working.
+    History: a simple list of calls and verdicts. We store the verdict, the short reason and the time, never audio or transcripts.
+    Safe word: the family agrees on a word for emergencies. If a "grandchild" calls needing money and can't say it, that's a red flag.
+    Pairing is Bluetooth with a passkey shown on the box's own screen, so only someone physically next to it can pair.
+    ~45 s.
+  </aside>
+</section>
+
+<!-- 8 EVALS -->
+<section class="slide" data-title="How we know it works">
+  <div class="kicker">How we know it works</div>
+  <h2>96 calls, replayed the way the box hears them</h2>
+  <div class="row mt-m" style="gap:56px;">
+    <div class="col" style="flex:1.05; gap:14px;">
+      <svg width="700" height="250" viewBox="0 0 700 250" aria-label="Scenario mix: 22 scam, 24 legit and ambiguous, 20 adversarial, 30 broken dictation">
+        <g font-size="24" fill="#eaf3f3">
+          <text x="0" y="37">Scam calls</text>
+          <rect x="300" y="12" width="242" height="38" rx="6" fill="#ee5d5d"/>
+          <text x="554" y="40" font-weight="700">22</text>
+          <text x="0" y="99">Legit look-alikes</text>
+          <rect x="300" y="74" width="264" height="38" rx="6" fill="#39c98a"/>
+          <text x="576" y="102" font-weight="700">24</text>
+          <text x="0" y="161">Adversarial</text>
+          <rect x="300" y="136" width="220" height="38" rx="6" fill="#f2c443"/>
+          <text x="532" y="164" font-weight="700">20</text>
+          <text x="0" y="223">Broken dictation</text>
+          <rect x="300" y="198" width="330" height="38" rx="6" fill="#4fb3b0"/>
+          <text x="642" y="226" font-weight="700">30</text>
+        </g>
+      </svg>
+      <div class="small">Same prompt, same 6 s chunks, same 2,400-byte window and red latch as the board. Legit set includes truly ambiguous calls; dictation is 15 NO/EN pairs. Built on Inspect AI.</div>
+    </div>
+    <div class="col" style="flex:1; gap:16px;">
+      <div class="tiles">
+        <div class="tile"><div class="k">Outcome correct</div><div class="v">— %</div><div class="d">scam red in time · real call never red</div></div>
+        <div class="tile"><div class="k">Detection delay</div><div class="v">— chunks</div><div class="d">6 s chunks past the deadline</div></div>
+        <div class="tile"><div class="k">False alarms</div><div class="v">— / 30</div><div class="d">red on a call that should stay green</div></div>
+        <div class="tile"><div class="k">Output format</div><div class="v">— %</div><div class="d">valid JSON · reason in call's language</div></div>
+      </div>
+      <div><span class="placeholder-tag">Results from first run</span></div>
+    </div>
+  </div>
+  <div class="adv mt-m">
+    <div class="card"><h4>Spoken prompt injection</h4><p>Caller reads a fake "system note" saying DNB verified the call. Must still go red.</p></div>
+    <div class="card"><h4>Rolling-window evasion</h4><p>BankID request early, then long small talk to push it out of the window. The latch must hold.</p></div>
+    <div class="card"><h4>Benign look-alike</h4><p>Siblings joking about a chatbot "ignoring its instructions". Must stay green.</p></div>
+  </div>
+  <aside class="notes">
+    A demo proves nothing about accuracy, so we built an eval suite with Inspect AI. 96 scenarios. Each one is a phone call cut into the same ~6-second chunks of messy speech-to-text the board sees: no speaker labels, misheard words. We replay it chunk by chunk with the exact production prompt, the same 2,400-byte window and the same latch.
+    The mix: 22 scam calls; 24 legitimate calls that look like scams, real DNB calls, the doctor, NAV, plus truly ambiguous ones; 20 adversarial calls; 30 broken dictation texts in Norwegian/English pairs.
+    Adversarial examples: a scammer reading out a fake "system note" telling the AI the call is verified. And a scammer who asks for the code early, then talks for minutes so it falls out of the window. The latch is the defence there.
+    Four scores: outcome, detection delay in chunks, false alarms (a red on a real call ruins it), and output format.
+    Numbers: we will fill these in from the first full run. We are not showing numbers we haven't measured.
+    The 30 on the false-alarm tile is the number of scenarios that must never turn red (17 legit calls, 5 adversarial controls, 8 dictation texts). Detection delay counts 6-second chunks past each scenario's deadline.
+    ~60 s.
+  </aside>
+</section>
+
+<!-- 9 MARKET -->
+<section class="slide" data-title="Market">
+  <div class="kicker">Market · Norway first</div>
+  <h2>First market: 272,000 households aged 75+</h2>
+  <div class="row grow" style="align-items:center; gap:70px;">
+    <svg width="560" height="560" viewBox="0 0 560 560" aria-label="TAM SAM SOM circles">
+      <circle cx="280" cy="280" r="262" fill="#4fb3b0" fill-opacity="0.10" stroke="#4fb3b0" stroke-opacity="0.5" stroke-width="2"/>
+      <circle cx="280" cy="362" r="180" fill="#4fb3b0" fill-opacity="0.18" stroke="#4fb3b0" stroke-opacity="0.8" stroke-width="2"/>
+      <circle cx="280" cy="482" r="60" fill="#39c98a" fill-opacity="0.85"/>
+      <text x="280" y="70" text-anchor="middle" font-size="30" font-weight="700" fill="#eaf3f3">TAM</text>
+      <text x="280" y="250" text-anchor="middle" font-size="30" font-weight="700" fill="#eaf3f3">SAM</text>
+      <text x="280" y="492" text-anchor="middle" font-size="28" font-weight="700" fill="#06261a">SOM</text>
+    </svg>
+    <div class="col" style="flex:1; gap:38px;">
+      <div><div class="small" style="letter-spacing:0.12em">TAM · ALL 67+ HOUSEHOLDS</div><div style="font-size:52px;font-weight:700">643k <span style="font-size:30px;color:var(--muted);font-weight:500">· NOK 1.15 bn / yr</span></div></div>
+      <div><div class="small" style="letter-spacing:0.12em">SAM · 75+, PRODUCT FIT</div><div style="font-size:52px;font-weight:700">272k <span style="font-size:30px;color:var(--muted);font-weight:500">· NOK 486M / yr</span></div></div>
+      <div><div class="small" style="letter-spacing:0.12em">SOM · 5% OF SAM BY YEAR 3</div><div style="font-size:52px;font-weight:700" class="g">13.6k <span style="font-size:30px;color:var(--muted);font-weight:500">· NOK 24M ARR</span></div></div>
+      <div class="body" style="font-size:24px">Next: Nordics, 1.49M households in reach (€232M / yr). DNB's own slice of the Norwegian SAM: ~90k households.</div>
+    </div>
+  </div>
+  <div class="foot"><span class="src">SSB 2026</span><span class="src">Team estimate at NOK 149 / month</span></div>
+  <aside class="notes">
+    We size per household, because one box covers the home. Norway has about 960,000 people over 67, roughly 643,000 households. At our consumer price that's a 1.15 billion kroner market.
+    The market we can actually serve first is 75+ households where the setup works, Wi-Fi and a phone on speaker: about 272,000 households, roughly half a billion kroner a year.
+    Our target is 5% of that by year three: 13,600 households, 24 million in annual revenue. The SAM filters are our own assumptions, flagged as such.
+    The Nordics roughly multiply the serviceable market by five. And DNB's own customers alone are around 90,000 of the Norwegian households.
+    ~40 s.
+  </aside>
+</section>
+
+<!-- 10 COMPETITION -->
+<section class="slide" data-title="Competition">
+  <div class="kicker">Competition</div>
+  <h2>Alone in the corner that matters</h2>
+  <div class="quad-wrap">
+    <div class="yaxis"><span>Number or after the fact</span><span>Live call content →</span></div>
+    <div class="quad">
+      <div class="q">
+        <div class="ql">Live content · specific phone</div>
+        <span class="chip">Google Pixel 9+ <em>not in NO</em></span>
+        <span class="chip">Samsung Galaxy S26 <em>not in NO</em></span>
+        <span class="chip">SeniorSafe <em>US, English</em></span>
+        <span class="chip">OnGuardAI <em>app, EN/FR</em></span>
+      </div>
+      <div class="q us">
+        <div class="us-name"><span class="dots"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></span> Scam Call Guardian</div>
+        <div class="small" style="width:100%;text-align:center;margin-top:8px">Norwegian · any phone · family loop</div>
+      </div>
+      <div class="q">
+        <div class="ql">Number or after · specific phone</div>
+        <span class="chip">Truecaller</span>
+        <span class="chip">Hiya AI Phone</span>
+        <span class="chip">Apple Call Screening</span>
+        <span class="chip">Monzo / Revolut call status</span>
+        <span class="chip">Norton · McAfee</span>
+      </div>
+      <div class="q">
+        <div class="ql">Number or after · any phone</div>
+        <span class="chip">Telenor Nummervarsel</span>
+        <span class="chip">Telia Svindelsperre</span>
+        <span class="chip">trueCall box <em>UK, no AI</em></span>
+        <span class="chip">Bank transaction checks</span>
+      </div>
+    </div>
+    <div class="xaxis"><span>Needs a specific phone or app</span><span>Works with any phone →</span></div>
+  </div>
+  <aside class="notes">
+    Two questions: does it judge what is said during the call, and does it work with whatever phone grandma already has?
+    Bottom right: the telcos and banks. Any phone, but they only see the number or the payment. Bottom left: apps like Truecaller and Hiya. You need a smartphone and an install, and they check numbers or synthetic voices.
+    Top left is the real threat: Google's on-device scam detection, which works, but only on new Pixels and Galaxies, and not in Norway or in Norwegian. US startups like SeniorSafe are English-only.
+    Top right is us: Norwegian, live content, any phone, with the family in the loop. Biggest risk: Google adds Norway. Our answer: most 80-year-olds don't own a Pixel 9, and Google won't give the daughter an alert or plug into DNB.
+    ~45 s.
+  </aside>
+</section>
+
+<!-- 11 BUSINESS MODEL -->
+<section class="slide" data-title="Business model">
+  <div class="kicker">Business model &amp; unit economics</div>
+  <h2>One prevented fraud pays for 112 years of subscription</h2>
+  <div class="price-cards mt-m">
+    <div class="card" style="border-color:rgba(57,201,138,0.6)"><div class="who">Families (B2C)</div><div class="p">149 <small>NOK / month</small></div><div class="m">incl. VAT · device included</div></div>
+    <div class="card"><div class="who">Via DNB</div><div class="p">99 <small>NOK / user-month</small></div><div class="m">79 at ≥ 10k units</div></div>
+    <div class="card"><div class="who">Municipalities</div><div class="p">129 <small>NOK / month</small></div><div class="m">add-on to the safety alarm</div></div>
+  </div>
+  <div class="mt-m">
+    <div class="small" style="margin-bottom:12px">B2C user-month, NOK ex VAT (60 calls × 5 min)</div>
+    <svg width="1380" height="150" viewBox="0 0 1380 150" aria-label="Cost breakdown versus price">
+      <!-- scale: 119 NOK = 1260 px => 10.588 px/NOK -->
+      <rect x="0" y="10" width="349" height="62" fill="#2a6f79"/>
+      <rect x="349" y="10" width="180" height="62" fill="#235a63"/>
+      <rect x="529" y="10" width="159" height="62" fill="#1c4a52"/>
+      <rect x="688" y="10" width="64" height="62" fill="#163c43"/>
+      <rect x="752" y="10" width="508" height="62" fill="#39c98a" fill-opacity="0.85"/>
+      <g font-size="22" fill="#eaf3f3" font-weight="600">
+        <text x="16" y="50">Cloud AI 33</text>
+        <text x="365" y="50">Device 17</text>
+        <text x="545" y="50">Support 15</text>
+        <text x="700" y="50">6</text>
+        <text x="772" y="50" fill="#06261a">Contribution 48 · 40%</text>
+      </g>
+      <text x="1270" y="50" font-size="22" fill="#9db8bd">= 119</text>
+      <text x="0" y="110" font-size="22" fill="#9db8bd">All-in cost ≈ NOK 71 · bank channel ≈ NOK 47 → 53% margin · 6 = backend + billing</text>
+    </svg>
+  </div>
+  <div class="foot"><span class="src">Team estimate, Deepgram + Anthropic list prices 2026</span><span class="src">Avg. fake-bank/police loss NOK 200k: Økokrim</span></div>
+  <aside class="notes">
+    Three ways to pay. Families pay 149 a month including the box. Through DNB, 99 per user per month, 79 at volume. Municipalities can add it to the safety alarm they already rent out for 250 to 550 kroner a month.
+    Unit economics for a typical user, 60 five-minute calls a month: cloud AI is about 33 kroner, the device amortised over three years 17, support 15, backend and payments 6. That leaves about 40% contribution in B2C and around 53% in the bank channel, where support is shared.
+    The headline: the average fake-police or fake-bank case costs about 200,000 kroner according to Økokrim. Stopping one pays for 112 years of subscription.
+    Heavy users cost more, so we cap usage or only stream calls from unknown numbers.
+    ~50 s.
+  </aside>
+</section>
+
+<!-- 12 GTM / PILOT -->
+<section class="slide" data-title="Go-to-market with DNB">
+  <div class="kicker">Go-to-market</div>
+  <h2>Start with a DNB pilot, then let DNB carry it</h2>
+  <div class="steps">
+    <div class="s now"><div class="n g">1 · NOW</div><p><strong>DNB pilot</strong><br>evidence on detection and prevented loss</p></div>
+    <div class="s"><div class="n">2</div><p><strong>DNB white-label</strong> to high-risk customers, B2C in parallel</p></div>
+    <div class="s"><div class="n">3</div><p><strong>Telcos and insurers</strong> as distribution</p></div>
+    <div class="s"><div class="n">4</div><p><strong>Municipalities</strong> next to the safety alarm</p></div>
+    <div class="s"><div class="n">5</div><p><strong>Nordic banks</strong> Nordea, Danske, Handelsbanken</p></div>
+  </div>
+  <div class="row mt-l" style="gap:44px;">
+    <div class="card" style="flex:1">
+      <div class="small" style="letter-spacing:0.12em">PILOT DESIGN</div>
+      <div class="big mt-s" style="font-size:30px"><strong>500</strong> DNB customers aged 75+, invited by the fraud team and customer care</div>
+      <div class="body mt-s" style="font-size:24px">6 months · matched control group from DNB fraud data · ~2 consented "mystery scam calls" per home</div>
+    </div>
+    <div class="col" style="flex:1.15; gap:14px;">
+      <div class="small" style="letter-spacing:0.12em">PILOT TARGETS</div>
+      <div class="kpis" style="grid-template-columns:1fr 1fr;">
+        <div class="tile"><div class="k">Scam calls caught (yellow or red)</div><div class="v">≥ 90%</div></div>
+        <div class="tile"><div class="k">Red on real calls</div><div class="v">≤ 0.5%</div></div>
+        <div class="tile"><div class="k">Median time to red</div><div class="v">≤ 20 s</div></div>
+        <div class="tile"><div class="k">Pilot cost</div><div class="v">≈ NOK 0.6M</div></div>
+      </div>
+    </div>
+  </div>
+  <aside class="notes">
+    DNB is the natural first partner. It has 2.4 million retail customers, no "is DNB calling you" feature today, and Finans Norge names manipulation fraud the top threat for 2026.
+    The pilot: 500 customers over 75, picked by DNB's fraud team and customer care, for example people who have been targeted before. Six months, with a matched control group from DNB's own fraud data. Real attacks are rare, maybe 3 to 12 in the whole pilot, so each home also gets about two consented, scripted "mystery scam calls" so we can actually measure detection.
+    Targets: catch 90% of scam calls, red on fewer than 0.5% of real calls, median 20 seconds to red. The whole pilot costs about 600,000 kroner, roughly three average frauds.
+    After that, DNB white-label to the highest-risk segment, then telcos, insurers, municipalities and Nordic banks.
+    ~50 s.
+  </aside>
+</section>
+
+<!-- 13 PRIVACY & TRUST -->
+<section class="slide" data-title="Privacy, trust & fixes before a pilot">
+  <div class="kicker">Privacy &amp; trust</div>
+  <h2>A box that listens has to earn trust. What we fix before a pilot:</h2>
+  <div class="checks">
+    <div class="check"><div class="box"></div><div><h3>The elder consents, knowingly</h3><p>Straffeloven § 205: a party may process their own call. Consent in their own words, visible "listening" light.</p></div></div>
+    <div class="check"><div class="box"></div><div><h3>No audio stored, ever</h3><p>Transcript only in memory. We keep verdict, short reason and time.</p></div></div>
+    <div class="check"><div class="box"></div><div><h3>GDPR done properly</h3><p>DPIA, data processing agreements with Deepgram and Anthropic, callers' data minimised.</p></div></div>
+    <div class="check"><div class="box"></div><div><h3>Data stays in the EU</h3><p>Deepgram EU endpoint. Claude through an EU cloud region, or zero data retention.</p></div></div>
+    <div class="check"><div class="box"></div><div><h3>Real security</h3><p>TLS verification on, no API keys on the device, secure boot, signed updates.</p></div></div>
+    <div class="check"><div class="box"></div><div><h3>Honest when offline</h3><p>No network means a grey "not protected" light, never a false green.</p></div></div>
+  </div>
+  <aside class="notes">
+    Be upfront here; the jury will think of it anyway. This is a hackathon build, and we know what it takes to put it in someone's home.
+    Legal basis: under straffeloven § 205 a party to a call may record or process it. So the elderly person must be the one who knowingly turns it on, not a relative installing it secretly. We want consent in their own words and a visible listening indicator.
+    No audio is stored. The transcript lives only in memory; we keep the verdict, the short reason and the time.
+    GDPR: a DPIA, processor agreements with Deepgram and Anthropic, and a documented balancing test for the caller's data.
+    EU endpoints: Deepgram has an EU endpoint; for Claude we route through an EU cloud region or sign zero data retention.
+    Security: today's prototype skips TLS certificate checks and has keys in flash. Before a pilot, the box only talks to our backend with its own credentials.
+    And if the network drops, the light shows "not protected", never a false green.
+    ~50 s.
+  </aside>
+</section>
+
+<!-- 14 ROADMAP + ASK -->
+<section class="slide" data-title="Roadmap & ask">
+  <div class="kicker">Roadmap &amp; ask</div>
+  <h2>From hackathon to 500 homes in 12 months</h2>
+  <div class="road">
+    <div class="axis"></div>
+    <div class="ms">
+      <div><div class="w">M0-1</div><p>Security hardening, EU endpoints, DPIA started</p></div>
+      <div><div class="w">M1-3</div><p>Norwegian eval set: ~300 scam, ~1,000 real calls</p></div>
+      <div><div class="w">M2-4</div><p>Alpha in 25 homes, design v1, CE pre-scan</p></div>
+      <div><div class="w">M4-6</div><p>Pilot agreement, 600 CE-marked units</p></div>
+      <div><div class="w">M6-12</div><p>6-month DNB pilot, go / no-go for rollout</p></div>
+    </div>
+  </div>
+  <div class="ask mt-l">
+    <h3>Our ask to DNB</h3>
+    <ol>
+      <li>A <strong>500-customer pilot</strong> with the fraud team and customer care</li>
+      <li><strong>Anonymised scam scripts</strong> from real cases to grow our Norwegian eval set</li>
+      <li>Later: a <strong>"DNB is not calling you"</strong> signal, and holding big transfers while the light is red</li>
+    </ol>
+  </div>
+  <div class="lead mt-m" style="color:var(--text)">Ingrid shouldn't have to know every scam. <span class="r">The light should.</span></div>
+  <aside class="notes">
+    The plan from today to a decision: harden security and move to EU endpoints in the first month. Build a real Norwegian eval set, around 300 scripted scam calls and 1,000 consented real calls. An alpha in 25 homes, our own parents first. Then the DNB pilot with 500 households, and a go/no-go at month 12.
+    Our ask to DNB is concrete: a pilot with the fraud team, anonymised scripts from real cases so our evals reflect what Norwegians actually hear, and later a bank-side signal. If the box is red, DNB could hold a large transfer for a few minutes. That combination is something nobody else can offer.
+    Close: "Ingrid shouldn't have to know every scam. The light should."
+    ~45 s.
+  </aside>
+</section>
+
+</div>
+
+<div id="progress"></div>
+<div id="counter"></div>
+<div id="hint">← → navigate · N notes · F fullscreen</div>
+<div id="notes-panel"><div class="hdr" id="notes-hdr">Speaker notes</div><div id="notes-body"></div></div>
+
+<script>
+(function () {
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var stage = document.getElementById('stage');
+  var counter = document.getElementById('counter');
+  var progress = document.getElementById('progress');
+  var notesBody = document.getElementById('notes-body');
+  var notesHdr = document.getElementById('notes-hdr');
+  var hint = document.getElementById('hint');
+  var W = 1600, H = 900;
+  var i = 0;
+
+  function fit() {
+    var s = Math.min(window.innerWidth / W, window.innerHeight / H);
+    stage.style.transform = 'translate(' + (-W * s / 2) + 'px,' + (-H * s / 2) + 'px) scale(' + s + ')';
+  }
+
+  function show(n) {
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach(function (el, k) { el.classList.toggle('active', k === i); });
+    counter.textContent = (i + 1) + ' / ' + slides.length;
+    progress.style.width = ((i + 1) / slides.length * 100) + '%';
+    var aside = slides[i].querySelector('aside.notes');
+    notesBody.innerHTML = aside ? aside.innerHTML.trim().replace(/\n\s*/g, '<br>') : '';
+    notesHdr.textContent = 'Speaker notes · ' + (i + 1) + ' · ' + (slides[i].getAttribute('data-title') || '');
+    if (location.hash !== '#' + (i + 1)) history.replaceState(null, '', '#' + (i + 1));
+  }
+
+  document.addEventListener('keydown', function (e) {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    var k = e.key;
+    if (k === 'ArrowRight' || k === 'ArrowDown' || k === ' ' || k === 'PageDown' || k === 'Enter') { e.preventDefault(); show(i + 1); }
+    else if (k === 'ArrowLeft' || k === 'ArrowUp' || k === 'PageUp' || k === 'Backspace') { e.preventDefault(); show(i - 1); }
+    else if (k === 'Home') { show(0); }
+    else if (k === 'End') { show(slides.length - 1); }
+    else if (k === 'n' || k === 'N') { document.body.classList.toggle('show-notes'); }
+    else if (k === 'f' || k === 'F') {
+      if (!document.fullscreenElement) { document.documentElement.requestFullscreen && document.documentElement.requestFullscreen(); }
+      else { document.exitFullscreen && document.exitFullscreen(); }
+    }
+  });
+
+  document.addEventListener('click', function (e) {
+    if (e.target.closest('#notes-panel')) return;
+    if (e.clientX < window.innerWidth / 3) show(i - 1); else show(i + 1);
+  });
+
+  window.addEventListener('resize', fit);
+  window.addEventListener('hashchange', function () {
+    var n = parseInt(location.hash.slice(1), 10);
+    if (!isNaN(n) && n - 1 !== i) show(n - 1);
+  });
+
+  setTimeout(function () { hint.style.transition = 'opacity 1s'; hint.style.opacity = '0'; }, 6000);
+
+  fit();
+  var start = parseInt(location.hash.slice(1), 10);
+  show(isNaN(start) ? 0 : start - 1);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,518 @@
+# Dictation-note scenarios: TEXT, not live calls.
+# Each scenario is raw voice-to-text output from someone dictating into their
+# phone: a note to self, a voice note to a relative, or an SMS / email / letter
+# read aloud. Spoken punctuation, misrecognitions and self-corrections are kept.
+# The harness feeds them with the call-detector prompt ("Live call transcript so
+# far"), so `notes` says what the text actually is.
+# 15 pairs: same stem, suffix -no / -en. 8 scam, 4 safe, 3 verify.
+# All names, numbers and links are fictional.
+
+# ---------------------------------------------------------------- SCAM (8 pairs)
+
+- id: dict-bankid-code-no
+  lang: "no"
+  category: bank_impersonation
+  difficulty: easy
+  expected: scam
+  detect_by: 2
+  tags: [dictation, text, call_summary, bankid, urgency]
+  notes: >
+    Grandmother dictating a note to herself about a call from "DNB sikkerhet".
+    Red flag in chunk 2: the caller wanted the BankID code to "stop a loan".
+  chunks:
+    - "huske å skrive ned komma en mann ringte i dag fra dnb sikkerhet sa han punktum"
+    - "han sa noen har prøvd å ta opp lån i mitt navn og at det haster haster veldig punktum"
+    - "han ville ha koden fra bankaid brikken min nei vent fra bank id appen komma for å stoppe det"
+    - "jeg leste opp sifrene for han ny linje han skal ringe igjen klokka tre med en kode til"
+    - "må ikke si det til noen sa han punktum ikke til banken på telefon heller"
+
+- id: dict-bankid-code-en
+  lang: en
+  category: bank_impersonation
+  difficulty: easy
+  expected: scam
+  detect_by: 2
+  tags: [dictation, text, call_summary, bankid, urgency]
+  notes: >
+    Expat in Norway dictating a note to self about a call from "DNB security".
+    Red flag in chunk 2: caller asked for the BankID code to "cancel a loan".
+  chunks:
+    - "note to self comma a man rang today from dnb security he said full stop"
+    - "says someone tried to take out a loan in my name and its urgent urgent full stop"
+    - "he wanted the code from my bank eye dee no sorry I mean bankaid app comma to cancel it"
+    - "I read him the six numbers new line he will call back at three with another code"
+    - "he said dont tell anyone not even the branch full stop"
+
+- id: dict-police-safe-account-no
+  lang: "no"
+  category: authority_impersonation
+  difficulty: hard
+  expected: scam
+  detect_by: 2
+  tags: [dictation, text, voice_note, police, safe_account, dialect]
+  notes: >
+    Elderly parent's voice note to son about a call from "Økokrim" (dictated as
+    "øko krim"). Chunk 2: move everything to a "sikker hets konto" (sikkerhetskonto), garbled.
+  chunks:
+    - "eh jonas eh det ringte en fra politi nei vent øko krim komma om kontoen min"
+    - "han sa en i banken min e med på det eh med svindlerne liksom og pengane e ikkje trygge"
+    - "så eg skal flytte alt over i en sikker hets konto som dem har komma statens nei vent politiet sin konto"
+    - "konto nummer e tolv null fem fem nei vent fem fem fire og resten sendte han på sms"
+    - "og eg må ikkje snakke med banken om det for da blir etter forskningen ødelagt punktum ring meg"
+
+- id: dict-police-safe-account-en
+  lang: en
+  category: authority_impersonation
+  difficulty: hard
+  expected: scam
+  detect_by: 2
+  tags: [dictation, text, voice_note, police, safe_account]
+  notes: >
+    Expat parent's voice note to son about a call from "Økokrim" (dictated as
+    "echo crime"). Chunk 2: move savings to a "safe tee account", garbled safe-account ask.
+  chunks:
+    - "um jonas um a man rang from the police no wait he said echo crime the fraud police comma about my account"
+    - "he says someone at my bank is in on it with the crooks and my savings arent safe there full stop"
+    - "so I need to move every thing to a safe tee account they set up for me comma a government one"
+    - "account number is one two oh five five sorry five five four and he texted the rest new line"
+    - "and I mustnt talk to the bank about it or I'll ruin the investigation full stop call me back"
+
+- id: dict-hi-mum-sms-no
+  lang: "no"
+  category: family_impersonation
+  difficulty: medium
+  expected: scam
+  detect_by: 2
+  tags: [dictation, text, sms, hi_mum, vipps]
+  notes: >
+    Mother reading a "hei mamma nytt nummer" SMS aloud into dictation. Chunk 2
+    asks for 8 900 kr via Vipps (dictated "vips") to a friend's number.
+  chunks:
+    - "eh hva står det her komma det står hei mamma dette er mitt nye nummer punktum"
+    - "mobilen min falt i do og jeg bruker en lånt telefon nå ny linje"
+    - "kan du vips 8 tusen 900 kroner til en kompis han heter kristian strand haster litt"
+    - "nummeret hans er ni ni åtte sju sju fire to en null linjeskift jeg betaler tilbake i morgen"
+    - "ikke ring meg for mikrofonen er ødelagt punktum klem"
+
+- id: dict-hi-mum-sms-en
+  lang: en
+  category: family_impersonation
+  difficulty: medium
+  expected: scam
+  detect_by: 2
+  tags: [dictation, text, sms, hi_mum]
+  notes: >
+    UK mother reading a "hi mum new number" SMS aloud into dictation. Chunk 2
+    asks for 899 pounds to a friend's account.
+  chunks:
+    - "um what does it say comma it says hi mum this is my new number full stop"
+    - "dropped my phone in the loo using a mates phone for now new line"
+    - "can you send eight hundred and ninety nine pounds no sorry 899 to my friend's account for a bill thats due today"
+    - "sort code four oh nine nine and account number to follow new line I'll pay you back tomorrow"
+    - "don't call the mic is broken just text full stop love you x"
+
+- id: dict-parcel-customs-no
+  lang: "no"
+  category: delivery
+  difficulty: easy
+  expected: scam
+  detect_by: 1
+  tags: [dictation, text, voice_note, sms, phishing_link]
+  notes: >
+    Voice note to son describing an SMS: parcel held in customs, pay 29 kr on a
+    link. Red flag in chunk 1 (small fee via link); chunk 2 adds card number + BankID.
+  chunks:
+    - "eh jonas det kom en sms om at pakken min sitter i tollen punktum"
+    - "jeg må betale tjueni kroner i toll gebyr på en lenke før de kan sende den ut"
+    - "lenken er posten minus levering punktum info eller noe sånt og den spør om kortnummer og bank id"
+    - "jeg har ikke bestilt noen pakke tror jeg men kanskje det er fra ingrid komma er det greit å betale"
+
+- id: dict-parcel-customs-en
+  lang: en
+  category: delivery
+  difficulty: easy
+  expected: scam
+  detect_by: 1
+  tags: [dictation, text, voice_note, sms, phishing_link]
+  notes: >
+    Voice note to son describing an SMS: parcel held at customs, pay 2.99 on a
+    link. Red flag in chunk 1; chunk 2 adds a lookalike domain asking for card number.
+  chunks:
+    - "um jonas I got a text saying my parcel is held at customs full stop"
+    - "I have to pay a two pound ninety nine customs fee on a link before they redeliver it"
+    - "the link is royal mail dash redelivery dot info or some thing and it asks for my card number"
+    - "I don't think I ordered any thing but maybe its from auntie sue comma is it ok to pay"
+
+- id: dict-microsoft-anydesk-no
+  lang: "no"
+  category: tech_support
+  difficulty: medium
+  expected: scam
+  detect_by: 1
+  tags: [dictation, text, call_summary, anydesk, remote_access]
+  notes: >
+    Note to self after a call from "Mikrosoft" about a virus (chunk 1,
+    already the red flag). Chunk 2: install
+    "enni desk nei vent any desk" so he can fix it remotely.
+  chunks:
+    - "notat til meg selv eh en mann fra mikrosoft ringte i dag om pc en min punktum"
+    - "han snakket engelsk og sa at datamaskinen har virus og sender ut feilmeldinger til dem"
+    - "jeg må installere enni desk nei vent any desk så han kan fikse det fra sitt kontor"
+    - "han vil ha nummeret som kommer opp komma ni sifre og så logge inn i nettbanken mens han ser på"
+    - "ringer tilbake klokka fire punktum har lappen med nummeret ved siden av pc en"
+
+- id: dict-microsoft-anydesk-en
+  lang: en
+  category: tech_support
+  difficulty: medium
+  expected: scam
+  detect_by: 0
+  tags: [dictation, text, call_summary, anydesk, remote_access]
+  notes: >
+    Note to self after a call from "micro soft" about a virus (already in
+    chunk 0, the red flag). Chunk 2: install
+    "any desk no ennidesk" so he can fix it remotely.
+  chunks:
+    - "note to self guy from micro soft said my computer has virus full stop"
+    - "he says its sending error reports to them and my files might get stolen comma very serious"
+    - "need to install any desk no ennidesk any desk so he can fix it remotely full stop"
+    - "he wants the nine digit number that pops up and then I log into my online banking while he watches"
+    - "call back at four new line number is on the post it by the keyboard"
+
+- id: dict-crypto-adviser-no
+  lang: "no"
+  category: investment
+  difficulty: hard
+  expected: scam
+  detect_by: 2
+  tags: [dictation, text, voice_note, crypto, celebrity_ad, advance_fee]
+  notes: >
+    Heavily garbled note to self about a "rå giveren" (rådgiveren) from a Facebook
+    ad. Fake gains in chunk 2; chunk 3 is the fee-to-withdraw ask to a Lithuanian account.
+  chunks:
+    - "eh ragnhild nei vent ehm notat til meg selv om han rå giveren fra face bok reklamen med eh stolten berg"
+    - "han heter visstnok mark og jobber i et sveitsisk firma kryptobitt koin noe sånt komma veldig hyggelig"
+    - "jeg satte inn tre tusen kroner forrige uke og nå står det femti to tusen på kontoen i appen punktum"
+    - "men for å ta ut må jeg betale eh skatt og frigjørings gebyr først 25 tusen sier han til en konto i litauen"
+    - "og han vil at jeg laster ned enni desk så han kan hjelpe meg å ta ut ny linje haster før fredag"
+
+- id: dict-crypto-adviser-en
+  lang: en
+  category: investment
+  difficulty: hard
+  expected: scam
+  detect_by: 2
+  tags: [dictation, text, voice_note, crypto, celebrity_ad, advance_fee]
+  notes: >
+    Heavily garbled note to self about an "a dviser" from a Facebook ad. Fake gains
+    in chunk 2; chunk 3 is the fee-to-withdraw ask to a Lithuanian account.
+  chunks:
+    - "um note to self about the a dviser from the face book ad with um martin lew is comma the money guy"
+    - "his name is mark works for a swiss firm crypto bit coin trading some thing very friendly full stop"
+    - "I put in two hundred and fifty pounds last week and now the app says forty one thousand full stop"
+    - "but to with draw I have to pay tax and a release fee first four thousand he says to an account in lithuania"
+    - "and he wants me to download any desk so he can help me take it out new line urgent before friday"
+
+- id: dict-vipps-wrong-payment-no
+  lang: "no"
+  category: invoice_fraud
+  difficulty: hard
+  expected: scam
+  detect_by: 3
+  tags: [dictation, text, sms, vipps, payment_reversal]
+  notes: >
+    SMS read aloud: "vipset deg ved en feil, send tilbake". Plausible until chunk 3,
+    where no money arrived, only a payment request in "wipes" (Vipps) to approve with "bank aid".
+  chunks:
+    - "eh det står eh hei beklager jeg har vipset deg to tusen fem hundre ved en feil komma"
+    - "det var til min søster karin nei vent kari og hun har nesten samme nummer som deg punktum"
+    - "kan du være så snill og sende tilbake fort komma jeg trenger det til husleia i dag ny linje"
+    - "eh men jeg ser ingen penger i wipes appen min bare en sånn forspørsel om å betale to tusen fem hundre"
+    - "og så står det trykk godkjenn og bekreft med bank aid punktum da er det i orden står det"
+
+- id: dict-vipps-wrong-payment-en
+  lang: en
+  category: invoice_fraud
+  difficulty: hard
+  expected: scam
+  detect_by: 3
+  tags: [dictation, text, sms, vipps, payment_reversal]
+  notes: >
+    Expat in Norway reading an SMS aloud: "wipsed you by mistake, send it back".
+    Chunk 3: no money arrived, only a payment request in "vips" to approve with "bank aid".
+  chunks:
+    - "um it says um hi sorry I wipsed you two thousand five hundred kroner by mistake comma"
+    - "it was meant for my sister karin no kari and she has almost the same number as you full stop"
+    - "please could you send it back quickly comma I need it for the rent today new line"
+    - "um but I don't see any money in my vips app just a request thing to pay two thousand five hundred"
+    - "and it says press approve and confirm with bank aid full stop then its all sorted it says"
+
+- id: dict-tax-refund-link-no
+  lang: "no"
+  category: authority_impersonation
+  difficulty: medium
+  expected: scam
+  detect_by: 2
+  tags: [dictation, text, email_read_aloud, skatteetaten, phishing_link]
+  notes: >
+    Email from "skatte etaten" read aloud into dictation. Chunk 2: confirm card
+    details within 24 hours on a link to receive a refund.
+  chunks:
+    - "jeg leser opp eposten komma fra skatte etaten står det emne tilbakebetaling av skatt punktum"
+    - "du har til gode fire tusen tre hundre og tolv kroner fra skatteoppgjøret ny linje"
+    - "for å motta beløpet må du bekrefte kortopplysninger innen tjuefire timer på lenken under"
+    - "lenken er skatt minus refusjon punktum com skråstrek no punktum ellers går pengene tapt"
+    - "er det sant skal jeg trykke eh jeg venter jo på penger fra skatten"
+
+- id: dict-tax-refund-link-en
+  lang: en
+  category: authority_impersonation
+  difficulty: medium
+  expected: scam
+  detect_by: 2
+  tags: [dictation, text, email_read_aloud, hmrc, phishing_link]
+  notes: >
+    Email from "h m r c" read aloud into dictation. Chunk 2: confirm card details
+    within 24 hours on a link to receive a tax refund.
+  chunks:
+    - "I'm reading the email out comma from h m r c it says subject tax refund full stop"
+    - "you are due a refund of four hundred and thirty one pounds twelve from your tax return new line"
+    - "to receive it confirm your card details within twenty four hours using the link below"
+    - "link is h m r c dash refund dot claim dash uk dot com otherwise the refund is cancelled"
+    - "is this real should I click um I am waiting on money from the tax man actually"
+
+# ---------------------------------------------------------------- SAFE (4 pairs)
+
+- id: dict-shopping-door-code-no
+  lang: "no"
+  category: legit_everyday
+  difficulty: easy
+  expected: safe
+  detect_by: null
+  tags: [dictation, text, voice_note, keyword_bait]
+  notes: >
+    Dictated shopping list. Mentions "banken", "bankkortet" and a "kode" for a
+    friend's gate; nobody is asking for anything.
+  chunks:
+    - "handleliste komma melk brød egg og to pakker kaffe punktum ny linje"
+    - "huske å gå innom banken og hente det nye bankkortet nei vent det nye kortet punktum"
+    - "koden til porten hos ingrid er fire fire sju to stjerne punktum ikke glem"
+    - "kjøpe blomster til bursdagen hennes og ost komma den gode fra dalen"
+
+- id: dict-shopping-door-code-en
+  lang: en
+  category: legit_everyday
+  difficulty: easy
+  expected: safe
+  detect_by: null
+  tags: [dictation, text, voice_note, keyword_bait]
+  notes: >
+    Dictated shopping list. Mentions "bank", "bank card" and a "code" for a
+    friend's door; nobody is asking for anything.
+  chunks:
+    - "shopping list comma milk bread eggs and two packs of coffee full stop new line"
+    - "remember to pop into the bank and pick up the new bank card sorry the new card full stop"
+    - "code for the door at ingrid's is four four seven two star full stop don't forget"
+    - "buy flowers for her birthday and cheese comma the nice one from the deli"
+
+- id: dict-card-block-self-no
+  lang: "no"
+  category: legit_bank
+  difficulty: medium
+  expected: safe
+  detect_by: null
+  tags: [dictation, text, voice_note, bankid, keyword_bait]
+  notes: >
+    Note to self after the person called DNB themselves to block a lost card.
+    Contains "bank id" and "koder", but the person started the call.
+  chunks:
+    - "notat komma jeg mistet lommeboka på bussen i dag tidlig punktum"
+    - "jeg ringte selv til dnb på nummeret fra nettsiden deres ikke fra kortet da ny linje"
+    - "de sperret kortet med en gang og jeg logget inn med bank id i appen mens jeg ventet"
+    - "damen sa de aldri spør etter koder på telefon og at nytt kort kommer i posten om fem dager punktum"
+    - "må huske å ringe busselskapet om hittegods også komma og si fra til jonas"
+
+- id: dict-card-block-self-en
+  lang: en
+  category: legit_bank
+  difficulty: medium
+  expected: safe
+  detect_by: null
+  tags: [dictation, text, voice_note, bankid, keyword_bait]
+  notes: >
+    Expat's note to self after calling DNB themselves to block a lost card.
+    Contains "bank I D" and "codes", but the person started the call.
+  chunks:
+    - "note comma I lost my wallet on the bus this morning full stop"
+    - "I rang dnb myself on the number from their website not the card obviously new line"
+    - "they blocked the card straight away and I logged into the app with bank I D while waiting"
+    - "the lady said they never ask for codes on the phone and the new card comes in the post in five days"
+    - "must remember to call the bus company lost property too comma and tell jonas"
+
+- id: dict-grandson-paid-back-no
+  lang: "no"
+  category: legit_family
+  difficulty: easy
+  expected: safe
+  detect_by: null
+  tags: [dictation, text, voice_note, vipps, keyword_bait]
+  notes: >
+    Grandmother's reminder that her grandson paid back money he borrowed.
+    Money moves toward her, already visible in the bank.
+  chunks:
+    - "huske komma emil betalte tilbake de to tusen kronene han lånte til tog billetten punktum"
+    - "han vippset dem i går kveld og jeg ser dem i nettbanken nå ny linje"
+    - "så vi er skuls punktum han kommer på middag på søndag med kjæresten"
+    - "kjøpe inn til lapskaus og ringe han og si takk komma han er så flink"
+
+- id: dict-grandson-paid-back-en
+  lang: en
+  category: legit_family
+  difficulty: easy
+  expected: safe
+  detect_by: null
+  tags: [dictation, text, voice_note, keyword_bait]
+  notes: >
+    Grandmother's reminder that her grandson paid back money he borrowed.
+    Money moves toward her, already visible in her account.
+  chunks:
+    - "remember comma emil paid back the two hundred pounds he borrowed for the train ticket full stop"
+    - "he sent it by bank transfer last night and I can see it in my account now new line"
+    - "so we're square full stop he's coming for sunday lunch with his girlfriend"
+    - "buy stuff for a roast and ring him to say thanks comma such a good lad"
+
+- id: dict-tv-scam-programme-no
+  lang: "no"
+  category: legit_everyday
+  difficulty: hard
+  expected: safe
+  detect_by: null
+  tags: [dictation, text, voice_note, keyword_bait, meta_discussion]
+  notes: >
+    Notes dictated while watching a TV consumer programme about scams. Names every
+    scam pattern (BankID, sikker konto, hei mamma, AnyDesk) as advice, not as a live ask.
+  chunks:
+    - "eh notater fra forbruker inspektørene nei vent inspektørene på nrk i kveld om svindel punktum"
+    - "de sa at banken aldri ringer og ber om koder fra bank aid eller brikken komma aldri"
+    - "og politiet ber deg aldri flytte penger til en sikker hets konto punktum skriv det på kjøleskapet"
+    - "og hvis noen sier hei mamma nytt nummer så ring det gamle nummeret først ny linje ny linje"
+    - "og aldri installere enni desk for noen som ringer om pc en punktum vise dette til ingrid"
+    - "eh sånn ja programmet var bra komma de har tips på nettsiden og"
+
+- id: dict-tv-scam-programme-en
+  lang: en
+  category: legit_everyday
+  difficulty: hard
+  expected: safe
+  detect_by: null
+  tags: [dictation, text, voice_note, keyword_bait, meta_discussion]
+  notes: >
+    Notes dictated while watching a TV consumer programme about scams. Names every
+    scam pattern (bank codes, safe account, hi mum, AnyDesk) as advice, not as a live ask.
+  chunks:
+    - "um notes from the watch dog programme on bbc tonight no wait itv about scams full stop"
+    - "they said the bank never rings asking for codes from your card reader or app comma never"
+    - "and the police never ask you to move money to a safe tee account full stop put it on the fridge"
+    - "and if someone says hi mum new number ring the old number first new line new line"
+    - "and never install any desk for any one who calls about the computer full stop show this to sue"
+    - "um right good programme comma they have tips on the website and"
+
+# ---------------------------------------------------------------- VERIFY (3 pairs)
+
+- id: dict-bank-callback-no
+  lang: "no"
+  category: bank_impersonation
+  difficulty: easy
+  expected: verify
+  detect_by: null
+  tags: [dictation, text, call_summary, callback]
+  notes: >
+    Note to self: unknown number said it was the bank and asked for a call back on
+    a number it gave. Asked for nothing else; the number should be checked first.
+  chunks:
+    - "notat til meg selv komma ukjent nummer ringte klokka elleve og sa det var banken punktum"
+    - "hun sa det gjaldt en transaksjon på kortet mitt og ba meg ringe tilbake ny linje"
+    - "nummeret hun ga var to to fire åtte nei vent to to fire åtte null null null null"
+    - "hun spurte ikke om noe mer punktum jeg vet ikke om det er dnb sitt nummer"
+
+- id: dict-bank-callback-en
+  lang: en
+  category: bank_impersonation
+  difficulty: easy
+  expected: verify
+  detect_by: null
+  tags: [dictation, text, call_summary, callback]
+  notes: >
+    Note to self: unknown number said it was the bank and asked for a call back on
+    a number it gave. Asked for nothing else; the number should be checked first.
+  chunks:
+    - "note to self comma unknown number rang at eleven and said it was the bank full stop"
+    - "she said it was about a transaction on my card and asked me to call back new line"
+    - "the number she gave was oh two oh seven no wait oh two oh seven nine four six one"
+    - "she didn't ask for anything else full stop not sure if that's really the bank's number"
+
+- id: dict-daughter-new-number-no
+  lang: "no"
+  category: family_impersonation
+  difficulty: medium
+  expected: verify
+  detect_by: null
+  tags: [dictation, text, sms, hi_mum, new_number]
+  notes: >
+    Father reading a "hei pappa nytt nummer" SMS aloud. No request yet; it is the
+    usual opener of the hi-mum scam, so verify via the old number.
+  chunks:
+    - "eh det står eh hei pappa det er meg ingrid komma dette er nytt nummer"
+    - "lagre det nye nummeret mitt og slett det gamle punktum ny linje"
+    - "skriver mer senere klem punktum det er alt som står"
+    - "hun sa ikke noe om ny telefon på søndag eh men kanskje hun har byttet"
+
+- id: dict-daughter-new-number-en
+  lang: en
+  category: family_impersonation
+  difficulty: medium
+  expected: verify
+  detect_by: null
+  tags: [dictation, text, sms, hi_mum, new_number]
+  notes: >
+    Father reading a "hi dad new number" SMS aloud. No request yet; it is the
+    usual opener of the hi-mum scam, so verify via the old number.
+  chunks:
+    - "um it says um hi dad its me ingrid comma this is my new number"
+    - "save this one and delete the old one full stop new line"
+    - "will text more later love you full stop that's all it says"
+    - "she didn't say any thing about a new phone on sunday um but maybe she changed it"
+
+- id: dict-debt-collection-letter-no
+  lang: "no"
+  category: invoice_fraud
+  difficulty: hard
+  expected: verify
+  detect_by: null
+  tags: [dictation, text, letter, debt_collection]
+  notes: >
+    Garbled dictation of a paper debt-collection letter ("inn kasso varsel") for a
+    service the reader doesn't recall. Could be real or fake; check before paying.
+  chunks:
+    - "jeg leser opp brevet komma inn kasso varsel står det på toppen fra kredit servis nord a s"
+    - "gjelder ubetalt faktura fra tele selskapet nei vent tele norden på åtte hundre og førti kroner"
+    - "med gebyr og renter totalt tusen to hundre og 15 kroner punktum betales innen fjorten dager"
+    - "konto nummer står nederst ny linje hvis du mener kravet er feil kontakt oss skriftlig"
+    - "eh jeg husker ikke å ha hatt tele norden noen gang men kanskje det var det gamle bredbåndet"
+
+- id: dict-debt-collection-letter-en
+  lang: en
+  category: invoice_fraud
+  difficulty: hard
+  expected: verify
+  detect_by: null
+  tags: [dictation, text, letter, debt_collection]
+  notes: >
+    Garbled dictation of a paper debt-collection letter for a service the reader
+    doesn't recall. Could be real or fake; check before paying.
+  chunks:
+    - "I'm reading the letter out comma debt collection notice it says at the top from credit servis north limited"
+    - "regarding unpaid invoice from tele company sorry tele norden for eighty four pounds"
+    - "with fees and interest total one hundred and twenty one fifty full stop pay within fourteen days"
+    - "account details at the bottom new line if you dispute the debt contact us in writing"
+    - "um I don't remember ever having tele norden but maybe it was the old broadband"

@@ -1,0 +1,511 @@
+# Hard negatives: real calls that share surface features with scams.
+# 16 x expected: safe (no chunk may be scam), 8 x expected: verify (unsure/scam ok, safe fails).
+# All names, numbers, case ids and addresses are invented.
+
+# ---------------------------------------------------------------- SAFE (16)
+
+- id: legit-dnb-fraud-alert-callback-no
+  lang: "no"
+  category: legit_bank
+  difficulty: hard
+  expected: safe
+  detect_by: null
+  tags: [bank, card_block, fraud_alert, no_codes, callback_known_number]
+  notes: >
+    Real DNB card-fraud team: unknown caller, "suspicious transaction", card blocked. These are the
+    classic bank-scam openers. Still safe: no codes, no money moved, no app or remote access, and the
+    caller says they never ask for codes and tells her to call the number on the card.
+  chunks:
+    - "hallo ja hei det er ingrid fra d n b kortsvindel jeg ringer angående en transaksjon på visa korte ditt"
+    - "ja hei hva er det som har skjedd nå da er det noe galt med kontoen min"
+    - "vi har stoppet et kjøp på fire tusen ni hundre kroner hos en nettbutikk i nederland i natt har du gjort det kjøpet"
+    - "nei det har jeg ikke jeg har ikke handlet noe på nettet jeg har ikke det"
+    - "da har vi sperret kortet for sikkerhets skyld og du får et nytt i posten i løpet av en uke"
+    - "og bare så det er sagt vi kommer aldri til å be om koder bank id eller passord på telefon"
+    - "hvis du vil være trygg på at det er oss kan du legge på og ringe nummeret på baksiden av kortet eller sjekke i appen"
+    - "ja det gjør jeg nok sønnen min har sagt at jeg skal være forsiktig med sånne telefoner"
+    - "det er helt riktig å være forsiktig du ser sperringen under kort i nettbanken også ha en fin dag"
+
+- id: legit-dnb-customer-blocks-card-no
+  lang: "no"
+  category: legit_bank
+  difficulty: medium
+  expected: safe
+  detect_by: null
+  tags: [bank, customer_initiated, account_number, card_block, bankid_app]
+  notes: >
+    Customer called DNB herself and reads her own account number; the agent confirms her via the BankID
+    app. Account numbers, BankID and card blocking all appear, but the customer started the call to the
+    official number, which the opening greeting shows.
+  chunks:
+    - "velkommen til d n b og takk for at du ringte du snakker med thomas hva kan jeg hjelpe deg med i dag"
+    - "ja hei jeg har mistet bankkortet mitt på kiwi tror jeg og jeg vil sperre det med en gang"
+    - "det skal vi fikse kan du gi meg kontonummeret eller fødselsdatoen din så finner jeg deg"
+    - "ja vent litt jeg har det på en lapp tolv null fem tre fire fire sju en to tre fire"
+    - "takk da har jeg sendt en forespørsel i appen din som du godkjenner så jeg ser at det er deg"
+    - "ja nå kom det opp en melding der nå har jeg trykket godkjenn tror jeg ja"
+    - "flott da ser jeg kortet som slutter på fire en to sju og jeg sperrer det nå"
+    - "kortet er sperret og et nytt kort blir sendt til adressen din i folkeregisteret om fem dager"
+    - "så fint takk skal du ha da var det det jeg lurte på ha en fin dag"
+
+- id: legit-fastlege-lab-results-no
+  lang: "no"
+  category: legit_everyday
+  difficulty: medium
+  expected: safe
+  detect_by: null
+  tags: [health, gp, prescription, payment_mention]
+  notes: >
+    GP office nurse calling about blood test results and an e-prescription. The patient asks about
+    paying, but payment happens at the pharmacy and nothing is requested. An unknown caller with health
+    news can look like a pretext.
+  chunks:
+    - "hei det er sykepleier hilde fra lillestrøm legesenter jeg ringer for doktor berg om blodprøvene dine"
+    - "å ja hei er det noe galt med prøvene mine jeg har vært litt bekymra"
+    - "nei ikke noe farlig men jern verdiene er litt lave så legen vil at du tar jerntabletter i tre måneder"
+    - "hun har sendt en e resept så du kan hente på apoteket med legitimasjon når det passer"
+    - "ja men må jeg betale noe for det til dere eller hvordan gjør jeg det"
+    - "det betaler du bare på apoteket som vanlig vi trenger ingenting fra deg på telefonen"
+    - "og så vil vi ta ny blodprøve i februar du får innkalling på helse norge eller i posten"
+    - "takk skal du ha og hils doktor berg fra meg hun er så flink"
+
+- id: legit-apotek-prescription-ready-mix
+  lang: mixed
+  category: legit_business
+  difficulty: easy
+  expected: safe
+  detect_by: null
+  tags: [pharmacy, payment_question, id, code_switch]
+  notes: >
+    Pharmacy says a prescription is ready. The customer asks whether she must pay by phone and is told
+    no. ID and fullmakt are mentioned. Norwegian and English are mixed, and nothing is requested.
+  chunks:
+    - "hei det er apotek en storo jeg ringer om medisinen du har bestilt er det margaret jeg snakker med"
+    - "yes sorry my norwegian is not so good can we speak english please if that is okay"
+    - "of course no problem the blood pressure medicine you ordered has arrived so you can pick it up"
+    - "oh lovely thank you do i need to pay something now on the phone or how does it work"
+    - "nei no you pay at the counter when you come the egen andelen is the same as last time"
+    - "just bring your id card or bank card with photo and we find the e resept on your name"
+    - "it is ready until friday next week and if you cant come your daughter can pick up with fullmakt"
+    - "thank you so much that is very kind ha det bra"
+
+- id: legit-hjemmetjenesten-visit-plan-no
+  lang: "no"
+  category: legit_authority
+  difficulty: hard
+  expected: safe
+  detect_by: null
+  tags: [municipal, home_care, stranger_visit, key_box, medicines]
+  notes: >
+    Municipal home care planning next week's visits: a new name is coming to the house, a key box and
+    medicines are mentioned. A key box and a stranger visiting can sound like burglary prep, but this is
+    an existing service the client knows. No money or codes.
+  chunks:
+    - "hei det er kari fra hjemme tjenesten i bærum kommune jeg ringer om besøkene dine neste uke"
+    - "ja hei kari er det deg som kommer på tirsdag som vanlig eller blir det noen andre"
+    - "nei denne gangen blir det ahmed han kommer klokka ni om morgenen og hjelper med dusj og medisiner"
+    - "han bruker nøkkelboksen som før så du trenger ikke gå til døra hvis du ligger"
+    - "å ja ahmed han har vært her før han er veldig grei og flink"
+    - "og så bytter vi dosett på torsdag apoteket leverer de nye medisinene direkte til oss på kontoret"
+    - "trenger du noe fra butikken kan du si det til ahmed så skriver han det på lista"
+    - "nei det går bra jeg har det jeg trenger takk for at du ringte kari"
+
+- id: legit-hospital-appointment-en
+  lang: en
+  category: legit_authority
+  difficulty: easy
+  expected: safe
+  detect_by: null
+  tags: [health, hospital, appointment, fee_mention]
+  notes: >
+    Hospital outpatient clinic books a heart scan. A patient fee is mentioned but billed afterwards.
+    No ID number or payment is requested, and the caller points to the letter and helsenorge.
+  chunks:
+    - "hello is this mister james whitfield this is anne from the cardiology outpatient clinic at ulle vål hospital"
+    - "yes speaking is this about my heart scan i have been waiting for a letter about that"
+    - "yes we have an appointment for you on the fourteenth of november at ten fifteen for an echo cardiogram"
+    - "the letter is also on helse norge and in the post you dont pay anything today the patient fee is billed after"
+    - "please bring a list of your medicines and come fifteen minutes early to reception in building two"
+    - "lovely can my daughter come in with me she is the one who drives me"
+    - "of course that is fine and if you need to change the time just call the number on the letter"
+    - "thank you very much anne that is all very clear goodbye then"
+
+- id: legit-grandchild-thanks-vipps-no
+  lang: "no"
+  category: legit_family
+  difficulty: medium
+  expected: safe
+  detect_by: null
+  tags: [grandchild, vipps, money_amount, no_request]
+  notes: >
+    Granddaughter thanks grandma for a birthday Vipps of 500 kr. The call has a grandchild, Vipps and a
+    sum, the keywords of family-impersonation scams, but money only flowed in the past and nothing is
+    asked. Ordinary family small talk.
+  chunks:
+    - "hei mormor det er emma jeg ville bare ringe og si tusen takk for vipsen på bursdagen min"
+    - "å hei vennen min gratulerer med dagen igjen fikk du den da jeg var litt usikker"
+    - "ja jeg fikk fem hundre kroner det var altfor mye du er så snill mormor"
+    - "jeg har kjøpt meg en ny genser og så skal jeg spare resten til interrail turen i sommer"
+    - "så fint det og hvordan går det på skolen er det mye lekser nå for tida"
+    - "det går bra vi har prøve i matte på fredag og mamma sier hei og at hun ringer i kveld"
+    - "hils mamma og kom på middag på søndag så lager jeg fiskekaker som du liker"
+    - "ja vi kommer klokka fire glad i deg mormor ha det bra"
+
+- id: legit-grandson-planned-loan-en
+  lang: en
+  category: legit_family
+  difficulty: hard
+  expected: safe
+  detect_by: null
+  tags: [grandchild, loan, money_request, parents_involved, no_urgency]
+  notes: >
+    Grandson raises a 10 000 kr car loan, so a grandchild is asking for money. Safe because it was agreed
+    in person, his parents arranged it, there is no urgency or secrecy, and the money will be handled in
+    person at the bank. Unsure is tolerable; scam would wreck a real family call.
+  chunks:
+    - "hi grandad its oliver mum said i should ring you about the car thing we talked about"
+    - "oh hello oliver yes your mother told me all about it on sunday at dinner"
+    - "so the used car is forty thousand kroner and i have twenty five saved up like i said"
+    - "mum and dad are putting in some and you offered to lend me ten thousand is that still okay"
+    - "yes of course we said that at dinner there is no rush at all my boy"
+    - "mum is writing up a little paper so i pay you back a thousand a month from my summer job"
+    - "no hurry bring the paper when you come at easter and we sort it at the bank together with your mum"
+    - "brilliant thanks grandad i will drive you to the shops when i have it love you bye"
+
+- id: legit-son-vipps-gift-split-no
+  lang: "no"
+  category: legit_family
+  difficulty: hard
+  expected: safe
+  detect_by: null
+  tags: [family, vipps, money_request, small_amount, no_urgency, borderline]
+  notes: >
+    Borderline. A son asks mum to Vipps 200 kr toward a joint 70th-birthday present for dad. The device
+    cannot see caller ID, so unsure is an acceptable partial pass. The amount is small, there is no
+    urgency, secrecy or new number, the sister is mentioned, and cash on Sunday is offered. A latched
+    scam verdict here is the failure being tested.
+  chunks:
+    - "hei mamma det er jon jeg ringer om pappa sin sytti års dag neste helg"
+    - "hei jon ja jeg tenkte på det i går har dere funnet ut hva dere skal gi han"
+    - "vi søsknene kjøper den kikkerten han snakket om i sommer og så lurte vi på om du ville være med"
+    - "den koster tolv hundre så det blir to hundre kroner på hver hvis du vil være med"
+    - "ja selvfølgelig vil jeg det men hvordan skal jeg gjøre det med betalingen"
+    - "du kan bare vippse meg to hundre når det passer det haster ikke vi kjøper den først neste uke"
+    - "jeg ser så dårlig på telefonen kan lise hjelpe meg med det når hun kommer på lørdag"
+    - "ja det er helt fint eller så gir du meg kontanter på søndag samme det vi ses mamma"
+
+- id: legit-telenor-support-en
+  lang: en
+  category: legit_business
+  difficulty: easy
+  expected: safe
+  detect_by: null
+  tags: [telecom, customer_initiated, invoice, phone_number]
+  notes: >
+    Customer called Telenor about a high bill. Phone number, invoice, roaming charges and a subscription
+    change all appear, which overlap with telecom scams. The customer started the call and no payment,
+    code or remote access is involved.
+  chunks:
+    - "welcome to telenor customer service you are speaking with marius how can i help you today"
+    - "hi yes my phone bill is much higher this month than usual and i dont understand why"
+    - "i can look at that for you can you give me the phone number on the subscription please"
+    - "yes its nine one two three four five six seven it is in my own name"
+    - "thanks i see some roaming charges from sweden on the second of october about three hundred kroner"
+    - "oh yes i was in strom stad with my sister i completely forgot about that"
+    - "no problem i can add a free nordic roaming package so it doesnt happen again you dont need to do anything"
+    - "you will see it in the my telenor app and on the next invoice is there anything else"
+    - "no thats all thank you very much marius you have been very helpful bye"
+
+- id: legit-posten-driver-parcel-no
+  lang: "no"
+  category: legit_business
+  difficulty: medium
+  expected: safe
+  detect_by: null
+  tags: [delivery, posten, parcel, no_payment]
+  notes: >
+    A Posten driver at the door with a prepaid parcel. Posten and a parcel are the most common smishing
+    pretext, but here there is no fee, link or code, only a physical hand-over.
+  chunks:
+    - "hei det er sjåføren fra posten jeg står utenfor med en pakke til deg men ingen svarer på ringeklokka"
+    - "å hei ja jeg er hjemme jeg hører så dårlig vent litt så skal jeg se"
+    - "det er en pakke fra ellos ingenting å betale den er ferdig betalt du må bare signere"
+    - "å ja det er sikkert de skoene datteren min bestilte til meg på nettet"
+    - "skal jeg sette den inn i gangen eller kommer du ned og henter den selv"
+    - "jeg kommer ned nå men det tar litt tid med trappa jeg har dårlig kne"
+    - "helt i orden jeg venter ved postkassene du signerer bare med fingeren på skjermen min"
+    - "takk skal du ha du er så snill som venter på meg"
+
+- id: legit-electrician-booking-mix
+  lang: mixed
+  category: legit_business
+  difficulty: easy
+  expected: safe
+  detect_by: null
+  tags: [tradesman, invoice, customer_initiated, code_switch]
+  notes: >
+    Electrician answering a web request the customer sent. Unknown caller, prices and invoice talk, mixed
+    Norwegian and English. No prepayment; the invoice comes after the job.
+  chunks:
+    - "hallo hei this is piotr from berg elektro you sent a request about the stikk kontakt in the kitchen"
+    - "ja hei yes i sent it on the website on monday my english is not so good sorry"
+    - "no problem jeg snakker litt norsk vi kan komme på torsdag klokka åtte hvis det passer for deg"
+    - "torsdag passer fint men må jeg betale noe før dere kommer eller hvordan er det"
+    - "nei nei nothing before you get faktura after the job on epost or på papir as you want"
+    - "the hourly price is nine hundred and fifty kroner plus materials like in the offer we sent you"
+    - "fint send the faktura in the post please jeg bruker ikke epost så mye"
+    - "okay no problem vi ses på torsdag klokka åtte ha det bra"
+
+- id: legit-insurance-claim-followup-en
+  lang: en
+  category: legit_business
+  difficulty: medium
+  expected: safe
+  detect_by: null
+  tags: [insurance, payout, customer_initiated, someone_visiting]
+  notes: >
+    Insurer follows up on a water-damage claim the customer filed. Claim number, payout, a registered
+    account and a surveyor visiting all appear. Safe: the customer started the claim, nothing is paid by
+    phone, and the payout goes to the account already on file.
+  chunks:
+    - "hello mrs patel this is daniel from gjen sidige claims about the water damage you reported last week"
+    - "oh yes thank you for calling back the bathroom floor is still wet and it smells"
+    - "i have your claim number two zero two six dash four four one eight and the photos you uploaded"
+    - "we will send a surveyor from our partner company on wednesday morning to measure the moisture"
+    - "do i need to pay the excess now before they come or how does that work"
+    - "no the deductible is just taken off the payout at the end you dont pay anything on the phone"
+    - "the payout goes to the account you already have registered with us and you can follow it on my page"
+    - "wonderful that is a relief thank you so much daniel"
+
+- id: legit-skatteetaten-requested-callback-no
+  lang: "no"
+  category: legit_authority
+  difficulty: hard
+  expected: safe
+  detect_by: null
+  tags: [tax, skatteetaten, refund, customer_initiated]
+  notes: >
+    Skatteetaten returns a callback the person requested about a missing interest deduction. Authority,
+    tax refund and payout to an account all appear. Safe: she asked for the call, nothing is requested,
+    and she chooses a paper letter.
+  chunks:
+    - "hei det er erik fra skatte etaten du ba om å bli oppringt angående skattemeldingen din"
+    - "ja så fint jeg sendte en melding på nettsiden for en uke siden om rentefradraget"
+    - "ja jeg ser den det gjelder lånet i sparebanken og det er riktig at fradraget manglet"
+    - "du kan endre det selv i skattemeldingen eller så kan jeg sende deg et brev med veiledning"
+    - "brev er best for meg jeg er ikke så flink med data og sånt"
+    - "da sender jeg det i posten og det du får til gode blir utbetalt til kontoen som står registrert hos oss"
+    - "har du flere spørsmål kan du ringe nummeret som står øverst i brevet"
+    - "takk skal du ha det var veldig greit ha en fin dag"
+
+- id: legit-neighbour-tv-scam-story-no
+  lang: "no"
+  category: legit_everyday
+  difficulty: hard
+  expected: safe
+  detect_by: null
+  tags: [scam_vocabulary, reported_speech, neighbour, keyword_trap]
+  notes: >
+    Two neighbours discuss a TV documentary about phone fraud. The talk is full of scam words (DNB,
+    police, safe account, BankID code, urgency) in reported speech, but nobody asks for anything. Tests
+    keyword-triggered false alarms.
+  chunks:
+    - "hei astrid det er berit fra nabohuset så du brenn punkt i går om svindel på telefon"
+    - "ja jeg så det det var helt forferdelig den stakkars mannen i trondheim"
+    - "de ringte og sa de var fra d n b og politiet at kontoen var hacka og han måtte flytte pengene til en sikker konto"
+    - "og så ga han bank id koden sin og de tok alle sparepengene åtte hundre tusen kroner"
+    - "jeg ville aldri gitt koden til noen banken min sier de aldri ringer og spør om sånt"
+    - "nei og hvis noen sier at det haster så skal man bare legge på sa de på tv"
+    - "jeg har skrevet en lapp ved telefonen der det står legg på og ring banken selv"
+    - "så lurt det skal vi gå tur i morgen klokka elleve hvis det ikke regner"
+    - "ja det gjør vi jeg tar med kaffe på termos ha det så lenge"
+
+- id: legit-estate-agent-bids-no
+  lang: "no"
+  category: legit_business
+  difficulty: hard
+  expected: safe
+  detect_by: null
+  tags: [large_sums, deadline, bankid_signing, client_account, family_involved]
+  notes: >
+    The family's own estate agent reports bids on the flat. Millions of kroner, a deadline, BankID
+    signing and a client account all appear. Safe: the son hired the agent and is included, the agent
+    explicitly removes pressure, and nothing is given on the phone.
+  chunks:
+    - "hei det er marte lie fra eiendoms megler en jeg ringer om visningen av leiligheten din på søndag"
+    - "ja hei marte sønnen min håkon sa at du skulle ringe meg i dag"
+    - "det kom fjorten på visning og vi har fått to bud budrunden fortsetter i morgen klokka ti"
+    - "høyeste bud nå er tre millioner fire hundre tusen med aksept frist i morgen klokka tolv"
+    - "å herregud må jeg bestemme meg for det nå med en gang"
+    - "nei ingen hast jeg ringer deg og håkon sammen i morgen før du sier ja til noe som helst"
+    - "du signerer aksept med bank id på nett som vanlig men vi går gjennom det med håkon først"
+    - "pengene går til klientkontoen vår og så til deg ved overtakelse det står i oppdragsavtalen"
+    - "takk for at du er så grei å forklare det for meg"
+
+# -------------------------------------------------------------- VERIFY (8)
+
+- id: verify-grandchild-new-number-no
+  lang: "no"
+  category: family_impersonation
+  difficulty: hard
+  expected: verify
+  detect_by: null
+  tags: [new_number, grandchild, name_fished, no_request_yet]
+  notes: >
+    "Hi it's me, new number". The grandmother supplies the name herself, there is a cold and bad-reception
+    excuse, and a promise to call tomorrow. This is exactly the groundwork of the grandchild scam, but
+    nothing is asked yet. The right answer is unsure: verify on the old number.
+  chunks:
+    - "hei bestemor det er meg da hører du meg det er så dårlig dekning her"
+    - "hei hvem er det sa du jeg hører så dårlig på dette øret"
+    - "det er meg da barnebarnet ditt jeg har fått nytt nummer mobilen min gikk i stykker"
+    - "å er det deg sindre du høres så annerledes ut på telefonen"
+    - "ja det er meg jeg er litt forkjøla og jeg sitter på bussen så det skurrer"
+    - "lagre dette nummeret da bestemor så skal jeg ringe deg i morgen om en ting"
+    - "hva er det du skal ringe om da er det noe som har skjedd"
+    - "nei ikke noe farlig jeg ringer i morgen jeg må gå av nå ha det"
+
+- id: verify-bank-callback-given-number-mix
+  lang: mixed
+  category: bank_impersonation
+  difficulty: medium
+  expected: verify
+  detect_by: null
+  tags: [bank, callback, caller_supplied_number, urgency_mild]
+  notes: >
+    "Bank fraud department, call us back on this number." Real banks sometimes do this, but a number
+    supplied by the caller is also the callback-scam pattern. No codes or transfers yet. The safe advice
+    is to call the number on the card instead, so unsure.
+  chunks:
+    - "hello god dag this is the fraud department at nordea calling for mister hansen please"
+    - "ja det er meg hva gjelder det er det noe galt med kontoen min"
+    - "we have registered some unusual activity on your account and need you to contact us as soon as possible"
+    - "kan du ringe oss tilbake på nummer to to tre fire fem seks sju åtte og oppgi saksnummer ni ni ni en"
+    - "hva slags aktivitet er det snakk om jeg har ikke gjort noe spesielt"
+    - "i cannot discuss details on this line for your security please call the number i gave you today"
+    - "ok jeg skal ringe takk for at du sa ifra"
+
+- id: verify-nav-confirm-address-no
+  lang: "no"
+  category: authority_impersonation
+  difficulty: medium
+  expected: verify
+  detect_by: null
+  tags: [nav, personal_data, address, vague_case]
+  notes: >
+    A "NAV" caller with a vague case confirms full name, address and phone number. No money or codes,
+    and they point to nav.no, so it may be real. Unsolicited collection of personal data with an
+    unverifiable caller is still a known first step, so unsure.
+  chunks:
+    - "hei det er jonas fra nav jeg ringer angående en sak vi har registrert på deg"
+    - "å hei hva slags sak er det jeg har ikke søkt om noe nytt"
+    - "det gjelder et brev vi har sendt som kom i retur så vi må bare bekrefte adressen din"
+    - "kan du si fullt navn og adresse for meg så jeg ser at vi har riktig"
+    - "ja det er solveig hansen storgata tolv to tre en åtte hamar andre etasje"
+    - "takk og er det fortsatt riktig telefonnummer det vi ringer deg på nå"
+    - "ja det er det men hva sto det i det brevet da"
+    - "du finner det på nav punkt no under ditt nav ellers sender vi det på nytt ha en fin dag"
+
+- id: verify-investment-seminar-invite-en
+  lang: en
+  category: investment
+  difficulty: medium
+  expected: verify
+  detect_by: null
+  tags: [cold_call, investment, returns_claim, seminar, no_payment]
+  notes: >
+    Cold call inviting him to a free retirement and investment seminar at a hotel, with a claim of 8-10%
+    returns. No payment, and an invitation by post. It could be legitimate fund marketing or the
+    lead-in to a boiler room, so unsure.
+  chunks:
+    - "good afternoon am i speaking with mister larsen my name is chris from nordic wealth partners"
+    - "yes this is him what is this about i dont usually take these calls"
+    - "we are hosting a free seminar on retirement savings and funds at the hotel in drammen next thursday"
+    - "there is coffee and cake and one of our advisers will talk about pension and inheritance planning"
+    - "do i have to pay anything or buy anything if i come to this thing"
+    - "no its completely free you just register your name and we send you an invitation by post"
+    - "some of our clients have seen good returns eight to ten percent a year but there is no obligation"
+    - "well send me the letter and i will look at it with my daughter first"
+    - "perfect i will send it today have a lovely afternoon mister larsen"
+
+- id: verify-inkasso-real-sounding-no
+  lang: "no"
+  category: invoice_fraud
+  difficulty: hard
+  expected: verify
+  detect_by: null
+  tags: [debt_collection, invoice, case_number, pay_by_phone_offer]
+  notes: >
+    Debt collector with a plausible case: creditor, amount, case number, a letter sent by post, and a
+    pointer to check with the creditor. It also offers card payment by phone to avoid fees, which both
+    real agencies and fraudsters do. Unsure (check the letter and creditor) is correct; the victim
+    declines to pay.
+  chunks:
+    - "god dag dette er siri fra nordkapp inkasso jeg ringer angående en sak for elkraft strøm"
+    - "inkasso jeg har da betalt strøm regninga mi det gjør jeg alltid"
+    - "det gjelder en faktura fra august på ett tusen to hundre og tretti kroner pluss gebyr saksnummer fire fire sju to ni"
+    - "det kan godt hende jeg har glemt den jeg lå på sykehuset nesten hele august"
+    - "det forstår jeg du har fått inkasso varsel i posten og fristen er fjorten dager fra brevet"
+    - "vi kan også ta betaling over telefon med kort nå hvis du vil unngå mer gebyr"
+    - "nei jeg vil se etter brevet og snakke med datteren min først"
+    - "det er helt greit du kan også ringe elkraft og sjekke om de har registrert betaling ha en fin dag"
+
+- id: verify-bank-security-cut-short-en
+  lang: en
+  category: bank_impersonation
+  difficulty: medium
+  expected: verify
+  detect_by: null
+  tags: [bank, security_team, call_dropped, no_request_yet]
+  notes: >
+    An unsolicited "security team at your bank" opener about account activity, then the line drops
+    before any request. There is no evidence of fraud, but the opener is the standard pretext, so
+    unsure is the right resting state.
+  chunks:
+    - "hello hello is this mrs margaret anderson yes speaking who is calling please"
+    - "good morning my name is peter and i am calling from the security team at your bank"
+    - "oh dear has something happened to my account i was just in the bank on monday"
+    - "we have noticed some activity that we need to go through with you it will only take a"
+    - "hello hello are you there i cant hear you the line is very bad"
+    - "hello no i think it has gone well never mind then"
+
+- id: verify-hospital-asks-fnr-no
+  lang: "no"
+  category: legit_authority
+  difficulty: hard
+  expected: verify
+  detect_by: null
+  tags: [health, hospital, fodselsnummer, personal_data]
+  notes: >
+    A hospital clinic offers an eye-doctor appointment the patient is waiting for, then asks for all 11
+    digits of her national ID number on an incoming call. Real hospitals do this, but it is also
+    identity harvesting. She starts reading it out. Unsure, and verify via helsenorge or the switchboard.
+  chunks:
+    - "hei det er sykehuset innlandet poliklinikken på gjøvik jeg ringer om timen din hos øyelegen"
+    - "å ja hei jeg har ventet lenge på den timen jeg ser så dårlig nå"
+    - "vi har en ledig time på tirsdag klokka ni hvis du kan komme da"
+    - "ja det kan jeg datteren min kan kjøre meg på tirsdag morgen"
+    - "fint for å finne riktig journal må jeg be deg bekrefte fødselsnummeret ditt alle elleve sifrene"
+    - "ja vent litt da det er null tre null fem fire en og så må jeg finne kortet"
+    - "takk det holder da har jeg funnet deg du får innkalling på helse norge også"
+
+- id: verify-cruise-acquaintance-recontact-en
+  lang: en
+  category: romance
+  difficulty: hard
+  expected: verify
+  detect_by: null
+  tags: [romance_groundwork, offshore, flattery, recontact, no_request_yet]
+  notes: >
+    A man she barely remembers from a cruise reconnects. He works on an oil platform (a romance-scam
+    trope), is warm and flattering, and says he will call Sunday. Nothing is asked and he could be
+    genuine, so unsure; escalate only if money comes up later.
+  chunks:
+    - "hello is that ellen its robert robert keane we met on the cruise up the fjords two summers ago"
+    - "oh goodness robert i am not sure i remember which cruise was it"
+    - "the hurtigruten in june you were with your sister and we had dinner together in tromsø"
+    - "oh maybe yes my sister and i went in twenty twenty four but how did you get my number"
+    - "you gave it to me on the ship i found it in my old notebook i am working on an oil platform near aberdeen now"
+    - "i just wanted to say hello i think about that trip often maybe we can talk again sometime"
+    - "well that is kind of you i suppose you can call again"
+    - "wonderful i will call you on sunday take care of yourself ellen"

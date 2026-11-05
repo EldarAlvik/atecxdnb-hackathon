@@ -1,0 +1,432 @@
+# SCAM scenarios set in Norway (2025-2026 patterns). See SCHEMA.md.
+# lang "no" is quoted on purpose: unquoted `no` parses as boolean false in YAML 1.1.
+# Difficulty: easy 6, medium 9, hard 7. Language: no 12, en 7, mixed 3.
+
+# ---------------------------------------------------------------- EASY
+
+- id: dnb-bankid-code-no
+  lang: "no"
+  category: bank_impersonation
+  difficulty: easy
+  expected: scam
+  detect_by: 1
+  tags: [dnb, bankid, otp, urgency]
+  notes: >
+    Classic DNB "sikkerhetsavdeling" call. Asks for the BankID code in chunk 1,
+    then threatens that the bank will not cover the loss.
+  chunks:
+    - "ja hallo hei dette er kristian berg fra dnb sin sikkerhetsavdeling vi har sett noe mistenkelig aktivitet på kontoen din"
+    - "eh hva for noe vi må stoppe en betaling på 14 tusen nå og da trenger jeg koden fra bankaid brikken din"
+    - "eh ok vent litt jeg må finne den ja bare les opp de seks sifrene som står på displayet så stopper vi den"
+    - "det er fire sju to eh vent hvorfor trenger du det det er for å bekrefte at det er deg vi må være raske"
+    - "hvis vi ikke får koden innen fem minutter så går pengene ut og da kan ikke banken dekke tapet ditt"
+    - "ok eh ni en tre takk og nå kommer det en ny kode på sms les den også for meg"
+
+- id: skatteetaten-restskatt-no
+  lang: "no"
+  category: authority_impersonation
+  difficulty: easy
+  expected: scam
+  detect_by: 1
+  tags: [skatteetaten, restskatt, card_details, threat]
+  notes: >
+    Fake Skatteetaten demands immediate payment of restskatt by phone with
+    namsmann threat, then asks for card number and CVC.
+  chunks:
+    - "ja hallo hei det er fra skatteetaten mitt navn er lise hansen jeg ringer angående skatteoppgjøret ditt for 2025"
+    - "eh ja ok du har en ubetalt restskatt på 18 450 kroner og saken går til namsmannen i dag hvis du ikke betaler nå"
+    - "hæ jeg har ikke fått noe brev det er sendt i digipost men fristen er ute så vi tar betalingen med kortet ditt nå"
+    - "kan du lese opp kortnummeret og utløpsdato og de tre sifrene på baksiden så stopper jeg inkassoen"
+    - "eh jeg vet ikke helt hvis du legger på nå blir det utleggstrekk i lønna fra neste måned og et gebyr på fire tusen"
+    - "ok ok vent litt jeg henter kortet det er fire fem to en"
+
+- id: posten-tollgebyr-no
+  lang: "no"
+  category: delivery
+  difficulty: easy
+  expected: scam
+  detect_by: 1
+  tags: [posten, customs_fee, robocall, otp]
+  notes: >
+    Robocall "trykk en", then a live agent demands a small customs fee by card
+    and the SMS code; the code actually confirms 8900 kr.
+  chunks:
+    - "hei dette er posten norge du har en pakke som holdes tilbake hos tollen trykk en for å snakke med en medarbeider"
+    - "ja hallo du snakker med erik fra posten pakken din har et tollgebyr på 89 kroner som må betales i dag ellers returneres den"
+    - "eh hva for en pakke den er fra kina jeg tar betalingen nå hvis du gir meg kortnummeret og koden på sms"
+    - "jeg har ikke bestilt noe fra kina det kan være en gave vi har kort tid den sendes tilbake klokka fire"
+    - "les opp koden på sms nå så frigjør jeg pakka eh det står 8900 her ikke 89 det er bare en feil i systemet"
+
+- id: telenor-gratis-iphone-no
+  lang: "no"
+  category: telecom
+  difficulty: easy
+  expected: scam
+  detect_by: 2
+  tags: [telenor, prize, sim_swap, otp]
+  notes: >
+    Fake Telenor loyalty offer (free iPhone, today only), asks card and SMS
+    code that is really a SIM/number transfer code.
+  chunks:
+    - "ja hallo hei det er jonas fra telenor jeg ringer fordi du har vært kunde hos oss i mange år"
+    - "og du er valgt ut til et lojalitetstilbud gratis iphone 17 og halv pris på abonnementet men tilbudet gjelder bare i dag"
+    - "eh det høres jo bra ut ja du må bare betale frakt på 49 kroner og så trenger jeg kortnummeret ditt"
+    - "og så må du gi meg koden du får på sms fra telenor for å bekrefte bestillingen"
+    - "eh i meldingen står det at koden er for å flytte nummeret til nytt sim kort ja det er normalt for den nye telefonen"
+    - "les den opp nå så avslutter jeg bestillingen ellers mister du tilbudet"
+
+- id: microsoft-anydesk-en
+  lang: en
+  category: tech_support
+  difficulty: easy
+  expected: scam
+  detect_by: 1
+  tags: [microsoft, anydesk, remote_access, online_banking]
+  notes: >
+    Unsolicited "Microsoft" call to a Norwegian, virus claim, AnyDesk install,
+    then asks the victim to open DNB online banking.
+  chunks:
+    - "hello hello yes hi am i speaking with mister olsen yes speaking good afternoon sir my name is david calling from microsoft"
+    - "we have detected that your computer in norway is infected with a virus and hackers are accessing your bank details right now"
+    - "oh no what do i do don't worry sir i will fix it please go to your computer open google and type any desk"
+    - "a n y d e s k yes download it and tell me the nine digit number that appears on the screen"
+    - "ok it says four eight one two two nine seven zero three ok now press accept so i can remove the virus"
+    - "now please log in to your dnb online banking so i can check if the hackers took money and don't close the screen"
+
+- id: hei-mamma-nytt-nummer-mix
+  lang: mixed
+  category: family_impersonation
+  difficulty: easy
+  expected: scam
+  detect_by: 1
+  tags: [hei_mamma, new_number, urgency, secrecy]
+  notes: >
+    "Hei mamma" on a call: new number, bank ID broken, urgent bill to an unknown
+    account. Daughter code-switches English/Norwegian.
+  chunks:
+    - "hei mamma det er meg jeg har fått nytt nummer my phone fell in the toilet så dette er det nye nummeret mitt"
+    - "is it emma yes mamma it's me jeg trenger hjelp asap jeg må betale en regning i dag and my bank id doesn't work"
+    - "kan du betale den for meg it's 8 750 kroner jeg sender kontonummeret på melding i'll pay you back tomorrow"
+    - "eh your voice sounds strange it's the new phone mamma bad connection please bare gjør det nå it's urgent"
+    - "account er 9235 41 08816 the name is just my landlord's company and don't call my old number it's broken"
+
+# ---------------------------------------------------------------- MEDIUM
+
+- id: nav-sykepenger-lenke-no
+  lang: "no"
+  category: authority_impersonation
+  difficulty: medium
+  expected: scam
+  detect_by: 4
+  tags: [nav, phishing_link, bankid, otp]
+  notes: >
+    Plausible NAV opening about held sick pay; red flag is the SMS link to a
+    fake domain with BankID login and reading back the code.
+  chunks:
+    - "hallo ja hei du snakker med jonas fra nav kontaktsenter jeg ringer om sykepengene dine for oktober"
+    - "ja eh har det skjedd noe ja utbetalingen ble stoppet fordi kontonummeret vi har registrert ikke stemmer med banken"
+    - "å det var rart jeg har ikke byttet konto nei det skjer en del etter at bankene endret systemene vi må bare oppdatere det"
+    - "jeg kan hjelpe deg med det nå så du får pengene før helgen det er 23 tusen fire hundre som står på vent"
+    - "for å bekrefte at det er deg logger du inn med bank id via en lenke jeg sender på sms nav punktum utbetaling minus no"
+    - "eh ok jeg fikk den nå ja trykk på den og logg inn og så les opp koden du får tilbake på sms til meg"
+    - "det står noe om dnb her eh ja det står skal du godkjenne ja det er bare for å koble kontoen trykk godkjenn"
+
+- id: vipps-feilbetaling-no
+  lang: "no"
+  category: invoice_fraud
+  difficulty: medium
+  expected: scam
+  detect_by: 4
+  tags: [vipps, wrong_payment, payment_request, sympathy]
+  notes: >
+    Stranger claims an accidental Vipps transfer and pushes the victim to accept
+    a payment request although nothing has arrived.
+  chunks:
+    - "hei ja hallo beklager at jeg ringer sånn det er sara jeg tror jeg har sendt penger til deg på vips ved en feil"
+    - "å har du det ja jeg skulle betale husleie til en med nesten samme nummer som deg og så sendte jeg 2500 til feil person"
+    - "eh vent jeg sjekker appen jeg ser ikke noe der nei det kan ta litt tid men jeg har kvittering her"
+    - "jeg er helt blakk og må betale husleia i dag kan du sende dem tilbake jeg har sendt deg en forespørsel"
+    - "eh jeg ser en forespørsel på 2500 men jeg har ikke fått noen penger ennå det er bare banken som er treg trykk godta"
+    - "jeg vet ikke jeg vil helst vente til pengene kommer nei vær så snill utleier kaster meg ut hvis jeg ikke betaler i dag"
+    - "og hvis du vil kan du sende til et annet nummer i stedet 412 88 903 det er til utleieren direkte"
+
+- id: finn-fiks-ferdig-lenke-no
+  lang: "no"
+  category: marketplace
+  difficulty: medium
+  expected: scam
+  detect_by: 3
+  tags: [finn, fiks_ferdig, posten, phishing_link, card_details]
+  notes: >
+    Finn.no buyer calls about a sofa, insists on Fiks ferdig, sends a fake
+    Posten link where the seller must enter card details to "receive" money.
+  chunks:
+    - "hei er det du som selger sofaen på finn ja det er meg flott jeg er veldig interessert er den fortsatt ledig"
+    - "ja den er ledig fint jeg bor i bergen så jeg kan ikke hente men jeg betaler full pris pluss frakt med fiks ferdig"
+    - "eh ok jeg har ikke brukt det før det er helt enkelt posten henter den hos deg og du får pengene med en gang"
+    - "jeg har betalt nå du får en lenke på sms fra posten der du fyller inn kortet ditt for å motta pengene"
+    - "ok eh lenken heter posten minus fiksferdig punktum com ja det er riktig skriv inn kortnummer og cvc så går pengene inn"
+    - "den spør om å bekrefte 7900 kroner i bankappen ja det er bare for å verifisere at kortet er ditt trykk bekreft"
+    - "eh men jeg skal jo få penger ikke betale det er bare sånn systemet gjør det du får alt tilbake med en gang"
+
+- id: elvia-nettleie-refusjon-no
+  lang: "no"
+  category: utility_energy
+  difficulty: medium
+  expected: scam
+  detect_by: 4
+  tags: [elvia, tibber, refund, bankid, phishing_link]
+  notes: >
+    Fake Elvia refund for a faulty meter. Red flags: refund requires BankID via
+    an SMS link, refuses the account they already debit, same-day deadline.
+  chunks:
+    - "ja hallo hei det er maria fra elvia jeg ringer angående nettleien din på adressen på hamar"
+    - "ja eh ok vi har funnet ut at måleren din har registrert feil siden i vinter så du har betalt for mye"
+    - "å ja det har jeg lurt på strømregningen har vært høy ja du har til gode 3 640 kroner som vi skal betale tilbake"
+    - "for at vi skal få utbetalt må du bekrefte kontoen din jeg sender deg en lenke og så logger du inn med bank id"
+    - "eh kan dere ikke bare sende det til kontoen dere trekker fra nei det er en annen avdeling og fristen går ut i dag"
+    - "når du har logget inn kommer det en kode les den opp for meg så registrerer jeg utbetalingen"
+    - "den sier noe om tibber og et lån eh nei det er bare samarbeidspartneren vår les opp koden"
+
+- id: crypto-celebrity-ad-en
+  lang: en
+  category: investment
+  difficulty: medium
+  expected: scam
+  detect_by: 4
+  tags: [crypto, celebrity_endorsement, guaranteed_returns, anydesk]
+  notes: >
+    Foreign call centre follows up a fake celebrity article. Sounds like a sales
+    call until 30 percent monthly "guaranteed" returns and AnyDesk.
+  chunks:
+    - "hi good evening is this kari yes hi kari my name is james i'm your account manager from nordic capital trade"
+    - "you registered on our website last week after reading the article about our trading platform do you remember that"
+    - "oh yes i filled in a form the one with petter stordalen yes exactly he made a lot of money with our ai system"
+    - "most of our norwegian clients start with just 250 euro and they see returns of around 30 percent in the first month"
+    - "that's a lot it is guaranteed because the ai never loses and you can withdraw any time you like"
+    - "to activate your account i'll send you a link to install any desk so i can help you buy the first crypto"
+    - "and we need a photo of your bank id card or passport for verification can you do that now the offer closes tonight"
+
+- id: lawyer-grandson-bail-en
+  lang: en
+  category: family_impersonation
+  difficulty: medium
+  expected: scam
+  detect_by: 4
+  tags: [grandparent, lawyer, bail, cash_courier, secrecy]
+  notes: >
+    English-speaking expat grandmother in Norway. "Solicitor" says grandson was
+    arrested; cash bail collected by courier is the clear red flag.
+  chunks:
+    - "hello is this margaret yes speaking hello margaret my name is richard hayes i'm a lawyer in oslo calling about your grandson ben"
+    - "oh goodness is he all right he's not hurt but he was involved in a traffic accident last night and the police have detained him"
+    - "oh no where is he he's at the police station he's very embarrassed he asked me to call you rather than his parents"
+    - "the other driver is pregnant and the prosecutor is considering serious charges but we can settle it today with bail"
+    - "the bail is 45 thousand kroner in cash and a courier from the court will come to your house this afternoon"
+    - "and ben asked that you please don't tell his mother he'll explain himself and there is a gag order on the case"
+    - "can i speak to him he's in a holding cell right now but he can call you briefly after the courier has been"
+
+- id: charity-earthquake-en
+  lang: en
+  category: charity
+  difficulty: medium
+  expected: scam
+  detect_by: 4
+  tags: [charity, disaster, personal_account, gift_cards]
+  notes: >
+    Disaster-relief appeal sounds normal until money must go to a private
+    foreign account or gift cards.
+  chunks:
+    - "hello good afternoon i'm calling from global relief aid norway we are reaching out to supporters about the earthquake in morocco"
+    - "oh yes i saw it on the news terrible yes thousands of families have lost everything and we are sending emergency tents this week"
+    - "we are a registered charity in norway and every 500 kroner gives one family shelter for a month would you like to help"
+    - "yes i suppose i could give something wonderful thank you the quickest way is a bank transfer to our field coordinator"
+    - "the account is in the name of ahmed karimi in lithuania because our norwegian account is frozen for an audit at the moment"
+    - "or if it's easier you can buy apple gift cards and read me the codes we convert them to supplies"
+    - "we need it today because the trucks leave tomorrow morning so please don't wait"
+
+- id: nordea-safe-account-en
+  lang: en
+  category: bank_impersonation
+  difficulty: medium
+  expected: scam
+  detect_by: 4
+  tags: [nordea, safe_account, expat, urgency]
+  notes: >
+    Expat in Trondheim, "Nordea fraud prevention" in English. Card-block story is
+    plausible; moving savings to a "secure account" is the giveaway.
+  chunks:
+    - "hi is this anna kowalski yes hi anna this is lukas from nordea fraud prevention we offer this service in english for international customers"
+    - "we have blocked a suspicious card payment of 12 thousand kroner to a shop in lisbon did you make that purchase"
+    - "no i didn't i'm in trondheim ok good that we stopped it but it looks like your online bank login has been compromised"
+    - "someone has your bank id details so we need to protect your savings before they empty the account today"
+    - "we will move your money to a secure account temporarily while we issue new credentials it's a standard procedure"
+    - "please open the nordea app and make a transfer to account 6011 28 47720 that's our internal safe account"
+    - "do i have to move everything yes the full balance from both accounts and don't hang up until it's done"
+
+- id: radgiver-ai-trading-mix
+  lang: mixed
+  category: investment
+  difficulty: medium
+  expected: scam
+  detect_by: 3
+  tags: [crypto, radgiver, guaranteed_returns, anydesk, bankid]
+  notes: >
+    "Personlig rådgiver" in Norwenglish. Opening is a vague sales pitch; 20
+    percent per month risk-free in chunk 3, then AnyDesk and BankID code.
+  chunks:
+    - "hei det er marcus fra nordisk kapitalforvaltning jeg er din personlige rådgiver you signed up for our newsletter i forrige uke"
+    - "ja jeg husker det kanskje great så vi har en ny ai trading plattform som er godkjent i eu og veldig populær i norge nå"
+    - "hvor mye kan man tjene da it depends men mange av våre clients har fått god avkastning det siste året"
+    - "typisk 20 percent per month helt uten risiko fordi ai stopper tapene automatisk og du kan ta ut når som helst"
+    - "eh det høres for godt ut haha i understand du kan starte med 3 000 kroner just install any desk så setter jeg opp kontoen"
+    - "og les opp koden fra bank id så verifiserer vi deg mot banken it's a regulatory requirement"
+    - "this offer closes i kveld så det er best vi gjør det nå mens vi er på telefonen"
+
+# ---------------------------------------------------------------- HARD
+
+- id: sparebank1-godkjenn-i-appen-no
+  lang: "no"
+  category: bank_impersonation
+  difficulty: hard
+  expected: scam
+  detect_by: 6
+  tags: [sparebank1, app_approval, correct_details, no_trigger_words]
+  notes: >
+    Caller knows address and a real recent purchase, never asks for a code. The
+    ask is "trykk godkjenn i appen", which shows a new device and 48 000 kr.
+  chunks:
+    - "hallo det er ingrid ja hei ingrid du snakker med thomas fra sparebank 1 sør-norge kundeservice har du et par minutter"
+    - "ja det har jeg vel du er kunde hos oss med brukskonto og sparekonto og bor i lyngveien 12 i arendal stemmer det"
+    - "ja det stemmer flott vi ringer en del kunder nå fordi vi oppgraderer mobilbanken og noen har fått feil i varslingene"
+    - "å ja jeg har ikke merket noe så bra jeg ser at du handlet på rema i går for 389 kroner kjenner du den igjen"
+    - "ja det var meg fint da er alt riktig vi skal bare koble telefonen din til den nye løsningen så slipper du trøbbel"
+    - "ok hvordan gjør jeg det det er veldig enkelt nå kommer det et varsel i appen og så trykker du bare godkjenn"
+    - "eh det står noe om ny enhet og et beløp her 48 tusen ja det er bare en testramme det trekkes ikke noe trykk godkjenn"
+    - "jeg er litt usikker det er helt normalt alle kunder gjør dette nå mens jeg er på linja ellers blir appen sperret"
+
+- id: politi-okokrim-bankansatt-no
+  lang: "no"
+  category: authority_impersonation
+  difficulty: hard
+  expected: scam
+  detect_by: 5
+  tags: [police, okokrim, insider_story, secrecy, safe_account]
+  notes: >
+    Calm "politiførstebetjent" builds a believable card-skimming case first. Red
+    flag is secrecy from the bank (chunk 4-5), then a "police-controlled" account.
+  chunks:
+    - "hallo det er arne hei arne mitt navn er henrik solberg jeg er politiførstebetjent i oslo politidistrikt passer det at vi snakker litt"
+    - "eh ja hva gjelder det ingen grunn til bekymring du har ikke gjort noe galt vi etterforsker en sak der du kan være fornærmet"
+    - "vi pågrep i går to personer på grünerløkka med utstyr for kortkopiering har du brukt kortet i en minibank i sentrum nylig"
+    - "ja jeg tok ut penger på jernbanetorget forrige uke ja det stemmer med det vi har funnet og du er kunde i dnb ja"
+    - "takk vi samarbeider med øko krim og tror noen på innsiden hjelper dem så hold samtalen for deg selv også overfor banken"
+    - "ok men hvorfor kan jeg ikke ringe banken fordi vi vet ikke hvem der som er involvert og hvis de blir advart forsvinner pengene dine"
+    - "vi vil sikre midlene dine på en konto som er under politiets kontroll mens etterforskningen pågår det tar et par uker"
+    - "du får kontonummeret fra meg nå 1503 47 22819 og så overfører du det som står på sparekontoen i dag gjerne i flere omganger"
+    - "eh det er jo nesten tre hundre tusen ja derfor haster det og hvis banken spør så si at det er til oppussing"
+
+- id: sonn-stemmeklon-bot-no
+  lang: "no"
+  category: voice_clone
+  difficulty: hard
+  expected: scam
+  detect_by: 6
+  tags: [voice_clone, son, friend_number, secrecy, chit_chat]
+  notes: >
+    AI clone of son Mathias, knows grandfather's surgery, long warm chit-chat.
+    Ask comes late: pay a "fine" by Vipps to a friend's number, don't tell dad.
+  chunks:
+    - "hallo hei mamma det er meg ja hei mathias så hyggelig da hvordan går det med deg"
+    - "jo det går fint jeg er litt sliten bare hvordan har bestefar det etter operasjonen han er hjemme nå og er i godt humør"
+    - "så bra hils fra meg du jeg ringer fra telefonen til en kompis min er tom for strøm og laderen ligger i bilen"
+    - "å ja kommer du hjem til jul da ja det tror jeg nok vi får se med jobben"
+    - "mamma jeg står i en litt dum situasjon her egentlig jeg fikk en bot på en kontroll og kortet mitt er sperret"
+    - "hva har skjedd det er ikke farlig men de skal ha betalt i dag ellers blir det mer trøbbel kan du låne meg 9 tusen"
+    - "kan du vippse det til kompisen min han betaler for meg nummeret er 469 21 774 han heter adrian"
+    - "eh hvorfor ikke til deg da kortet mitt er sperret jo ikke si noe til pappa han blir sur jeg betaler tilbake fredag"
+    - "kan du gjøre det nå mens jeg er på linja så jeg vet at det har gått gjennom"
+
+- id: gjensidige-premie-refusjon-no
+  lang: "no"
+  category: insurance
+  difficulty: hard
+  expected: scam
+  detect_by: 6
+  tags: [gjensidige, refund, correct_details, pay_to_receive, new_payee]
+  notes: >
+    Fake Gjensidige agent knows car and reg number, friendly good-news call. The
+    "refund" requires adding a new payee and sending 6200 to a "klientkonto".
+  chunks:
+    - "ja hallo hei det er camilla fra gjensidige kundesenter snakker jeg med tor egil ja det gjør du"
+    - "jeg ringer om bilforsikringen din på tesla model y med registreringsnummer el 48213 du har hatt den hos oss siden 2022"
+    - "ja det stemmer det har vært en feil i bonusberegningen så du har betalt litt for mye premie de siste to årene"
+    - "å så hyggelig ja det er ikke ofte vi ringer med gode nyheter haha du har rundt 6 200 kroner til gode"
+    - "vi har byttet utbetalingssystem i høst så det er litt tungvint nå men jeg kan guide deg gjennom det mens vi snakker"
+    - "har du nettbanken åpen på pcen fint gå inn på betaling og velg ny mottaker så legger vi inn refusjonskontoen"
+    - "eh skal jeg betale noe nei beløpet er bare en referanse skriv 6200 og kontonummer 9710 33 48261 det går inn igjen til deg"
+    - "jeg skjønner ikke helt det er en midlertidig klientkonto den sender pengene tilbake sammen med refusjonen i løpet av en dag"
+    - "bekreft med bank id nå så er vi ferdige før saksbehandlingen stenger klokka fire"
+
+- id: recovery-bitvantage-en
+  lang: en
+  category: investment
+  difficulty: hard
+  expected: scam
+  detect_by: 7
+  tags: [recovery_scam, prior_victim, correct_details, advance_fee, crypto]
+  notes: >
+    Recovery scam aimed at a previous victim. Knows platform and loss amount,
+    sounds official and careful; the advance "compliance deposit" comes late.
+  chunks:
+    - "hello mister haugen this is sarah whitfield from the european financial recovery office do you have a moment to talk"
+    - "yes what is it about i'm calling about your police report in 2024 about the platform called bitvantage you lost about 180 thousand kroner"
+    - "yes that's right it was terrible i'm very sorry to hear that we work with authorities in several countries to trace stolen funds"
+    - "how did you get my name your case was on a list shared after an operation in cyprus the people behind bitvantage were arrested"
+    - "really that's good news it is and some frozen wallets have been linked to your transactions so you may be eligible for compensation"
+    - "i don't want to promise anything but in cases like yours clients usually recover between 70 and 90 percent"
+    - "the next step is just paperwork we open a recovery file in your name and the court releases the funds to a custody wallet"
+    - "the only thing is the release requires a compliance deposit of 2 percent held by the custodian and refunded with your payout"
+    - "that's around 3 600 kroner in bitcoin or usdt i'll guide you and we should do it this week before the window closes"
+
+- id: romance-oil-platform-en
+  lang: en
+  category: romance
+  difficulty: hard
+  expected: scam
+  detect_by: 7
+  tags: [romance, north_sea, frozen_account, release_fee, secrecy]
+  notes: >
+    Ongoing online relationship, "engineer" on a North Sea platform. Several
+    chunks of affectionate small talk before a frozen-account story and a fee.
+  chunks:
+    - "hey sweetheart it's me oh hi daniel i was hoping you would call how was your day on the platform"
+    - "long day the north sea weather is crazy but your voice makes it better did you go to the cabin with your sister"
+    - "yes we went to hemsedal it was lovely i showed her your picture she said you look like a movie star haha"
+    - "tell her i said thank you i keep thinking about our plans for christmas in bergen i already looked at hotels"
+    - "me too i can't wait my contract ends in three weeks and then i'm all yours but there's a small problem with my salary"
+    - "the company pays to my account in the us and the bank has frozen it because of a compliance check it's very stressful"
+    - "oh no can i do anything i hate asking but there's a release fee for my equipment shipment and i can't reach my funds"
+    - "if you could cover it just for a few days 28 thousand kroner i'll pay you back the moment i'm on land i promise you"
+    - "i'll send you the account of my agent in malaysia he handles shipping and please don't tell your sister she won't understand"
+
+- id: altibox-teamviewer-mix
+  lang: mixed
+  category: tech_support
+  difficulty: hard
+  expected: scam
+  detect_by: 5
+  tags: [altibox, isp, teamviewer, remote_access, compensation, correct_details]
+  notes: >
+    "Altibox support" in English, Norwegian victim answers in Norwegian. Knows
+    address and a real slow-internet day; remote access then online banking.
+  chunks:
+    - "hallo ja hello good afternoon am i speaking with mister lie ja det er meg hi this is kevin from altibox technical support"
+    - "we are calling customers in kristiansand because of a fiber outage last week did you have problems with the internet"
+    - "ja faktisk det var litt treigt på søndag ja yes sorry about that your router at sletta 4 has reported a lot of errors"
+    - "ok hva må jeg gjøre no problem it's a quick fix we can do it together do you have your computer nearby"
+    - "ja vent litt jeg skrur på pcen perfect while it starts i can tell you that you will also get compensation for the outage"
+    - "please open the browser and go to team viewer dot com and download quick support so i can check the router"
+    - "eh ok den spør om tillatelse ja trykk tillat great now i see your screen the router settings look ok"
+    - "now for the compensation of 1 500 kroner please log in to your nettbank so the system can register the refund"
+    - "eh hvorfor må du se nettbanken it's only to confirm your account don't worry the screen goes black while it processes"
