@@ -659,21 +659,32 @@ code:
     // ---------------- loop, normal mode ----------------
     static void sgNormalLoop(int want) {
       static EveryTimer frame, lights, stats;
-      static uint32_t wifiBeganAt = 0, pressAt = 0;
+      static uint32_t wifiBeganAt = 0, pressAt = 0, lastTapAt = 0;
       static int lastWifi = -1, wifiAttempt = 0;
+      static uint8_t taps = 0;
       static bool longFired = false;
       uint32_t now = millis();
 
-      // ---- button: short press toggles guarding, 5 s hold starts BLE setup ----
+      // ---- button: a press toggles guarding; 4 quick presses or a 5 s hold
+      // start BLE setup. A press only counts once no other follows within
+      // SG_TAP_GAP_MS, so the toggle comes that much after the release. ----
+      static const uint32_t SG_TAP_GAP_MS = 600;
       bool down = button.isPressed();
       if (down && !pressAt) { pressAt = now ? now : 1; longFired = false; }
       if (down && pressAt && !longFired && now - pressAt >= 5000) {
-        longFired = true;
+        longFired = true; taps = 0;
         sgRequestSetup();
       }
       if (!down && pressAt) {
-        if (!longFired && now - pressAt < 1500) want = g_guarding ? 0 : 1;
+        if (!longFired && now - pressAt < 1500) {
+          taps++; lastTapAt = now;
+          if (taps >= 4) { taps = 0; sgRequestSetup(); }
+        } else taps = 0;
         pressAt = 0;
+      }
+      if (taps && !down && now - lastTapAt > SG_TAP_GAP_MS) {
+        want = g_guarding ? 0 : 1;      // 1-3 quick presses: one toggle
+        taps = 0;
       }
       int8_t req = __atomic_exchange_n((int8_t*)&g_guardReq, (int8_t)-1, __ATOMIC_SEQ_CST);
       if (req >= 0) want = req;
@@ -735,7 +746,11 @@ code:
         st7735_tft.clear();
         bool wifiUp = WiFi.status() == WL_CONNECTED;
         String st = String(wifiUp ? "W+" : "W-") + (g_wsConnected ? " STT+" : " STT-");
-        if (pressAt && now - pressAt >= 1500) {
+        if (taps >= 2 && !g_restartAt) {
+          char msg[24]; snprintf(msg, sizeof msg, "%d more", 4 - taps);
+          sgText("Setup press", 2, 10, 2, ST7735_TFT::COLOR_CYAN);
+          sgText(msg, 30, 40, 3, ST7735_TFT::COLOR_YELLOW);
+        } else if (pressAt && now - pressAt >= 1500) {
           char msg[24]; snprintf(msg, sizeof msg, "%lu", (unsigned long)((5000 - min<uint32_t>(5000, now - pressAt) + 999) / 1000));
           sgText("Hold for setup", 2, 10, 2, ST7735_TFT::COLOR_CYAN);
           sgText(msg, 72, 40, 3, ST7735_TFT::COLOR_YELLOW);

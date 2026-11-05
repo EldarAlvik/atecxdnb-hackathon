@@ -119,7 +119,7 @@ private fun Welcome(ui: OnboardingUi, startBle: () -> Unit, vm: OnboardingViewMo
             "This phone connects to it over Bluetooth once, gives it your Wi-Fi, and then talks to it over Wi-Fi.",
     )
     Text(
-        "Put the board in setup mode: it starts in setup mode when it has no Wi-Fi, or hold its button for 5 seconds. " +
+        "Put the board in setup mode: it starts in setup mode when it has no Wi-Fi, or press its button 4 times quickly (or hold it for 5 seconds). " +
             "Its screen then shows a 6-digit code.",
         style = MaterialTheme.typography.bodyMedium,
     )

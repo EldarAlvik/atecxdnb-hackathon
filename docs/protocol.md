@@ -23,7 +23,8 @@ type `_guardian._tcp`.
 ### When the board advertises
 
 - At boot, when no Wi-Fi network is saved in NVS.
-- After the button is held for **5 s**. The board saves a flag and restarts into
+- After **four quick presses** of the button (each within 0.6 s of the last), or
+  holding it for **5 s**. The board saves a flag and restarts into
   setup mode, so BLE always starts from a clean heap.
 - After `POST /setup` (same as the long press).
 

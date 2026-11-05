@@ -51,8 +51,9 @@ uv run atech upload board          # builds and flashes
 uv run atech check
 ```
 
-- **Button**: a short press toggles guarding. Holding it **5 s** restarts the
-  board into BLE setup mode. When idle, the screen says "Press button to guard",
+- **Button**: a short press toggles guarding (about 0.6 s after you let go).
+  **Four quick presses**, or holding it **5 s**, restart the board into BLE setup
+  mode. When idle, the screen says "Press button to guard",
   shows the IP, and the lights are off.
 - **Guarding:** WiFi connects ("WiFi..."), then the Deepgram stream ("CONNECT"),
   then "LISTENING" with a breathing blue yellow-grid. Each verdict lights one grid:
@@ -75,7 +76,8 @@ uv run python board/guardian_test.py   # guard on, speak test lines via Windows 
 The full protocol is in [`docs/protocol.md`](../docs/protocol.md); the Android app
 is in `android/`, a mock board in `mock/`.
 
-- **Setup mode** starts when no Wi-Fi is saved, after a 5 s button hold, or after
+- **Setup mode** starts when no Wi-Fi is saved, after four quick presses or a 5 s
+  button hold, or after
   `POST /setup` / `atech send setup` (`atech send setup_cancel` leaves it). The screen shows `SETUP` and a 6-digit code;
   the blue breathe is faster. The app finds `Guardian-XXXX` over BLE, pairs with
   that code, sends the Wi-Fi name and password, and gets a device token back. The
