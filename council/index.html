@@ -1,0 +1,138 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ATEC × DNB council of models</title><style>
+:root{--panel:var(--card,#fff);--mut:var(--muted-foreground,#5b6575);--line:var(--border,#e2e6ec);--acc:var(--info,#007272);--acc-soft:color-mix(in srgb,var(--info,#007272) 14%,transparent);--pick:var(--warning,#b4500a);--pick-soft:color-mix(in srgb,var(--warning,#b4500a) 14%,transparent);--wild:var(--chart-4,#6b3fa0);--wild-soft:color-mix(in srgb,var(--chart-4,#6b3fa0) 14%,transparent);--good:var(--success,#1f7a3a);--good-soft:color-mix(in srgb,var(--success,#1f7a3a) 14%,transparent);--r:var(--radius,10px)}
+*{box-sizing:border-box}body{margin:0;font-size:14px;line-height:1.55;font-family:var(--font-sans,system-ui,sans-serif)}
+.sub{color:var(--mut);margin-top:0}h2{font-size:18px;margin:28px 0 10px}h2.round{font-size:22px;margin-top:40px;padding-top:16px;border-top:2px solid var(--line)}
+.grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px 16px 12px}
+.card h3{margin:0 0 4px;font-size:16px}
+.idea{border-top:1px solid var(--line);padding:9px 0 7px}.idea:first-of-type{border-top:0}
+.idea p{margin:3px 0 0;color:var(--mut)}
+.tag{display:inline-block;font-size:11px;font-weight:600;padding:1px 7px;border-radius:99px;margin-left:6px;vertical-align:1px}
+.tag.pick{background:var(--pick-soft);color:var(--pick)}.tag.wild{background:var(--wild-soft);color:var(--wild)}
+.idea.picked{background:var(--pick-soft);margin:0 -16px;padding:9px 16px 7px;border-top:0}
+.idea.wildcard b,.idea.wildcard p{color:var(--wild)}
+.themes{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
+.theme{background:var(--acc-soft);border-radius:var(--r);padding:14px 16px}.theme b{color:var(--acc)}.theme p{margin:4px 0 0}
+.votes{font-size:12px;font-weight:600;color:var(--acc)}
+.note{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--acc);border-radius:var(--r);padding:12px 16px;margin:10px 0}
+.rec{background:var(--good-soft);border-radius:var(--r);padding:14px 16px;margin:10px 0}.rec b{color:var(--good)}
+ul{margin:6px 0;padding-left:20px}code{font-family:var(--font-mono,monospace);font-size:12px}
+</style></head><body>
+<p class="sub">Seven models, two rounds. Round 2 (top) uses the team's actual kit, requires an AI agent at the core of every idea, and had members work blind to each other. Round 1 (below) was the open brainstorm.</p>
+
+<h2 class="round">Round 2: agent-native ideas</h2>
+<p class="sub">Kit: ESP32-S3 with Wi-Fi and Bluetooth, speaker, mic, four motors, humidity and temperature sensor, accelerometer, three buttons, three LEDs, a screen and a rotary knob. Members could not see each other's files, so overlaps are independent votes.</p>
+
+<h2>Independent convergence</h2>
+<div class="themes">
+<div class="theme"><span class="votes">5 of 7 models · 2 picks</span><br><b>Scam and care guardian at home</b><p>Varsko (Opus, pick) · Vern (Fable, pick) · OMBUD (Sol) · Vakt (Kimi) · Bestevenn (GLM). It listens to the call, warns out loud, holds the transfer at the bank and alerts family. It can never move money.</p></div>
+<div class="theme"><span class="votes">3 models · 2 picks</span><br><b>Agent in the cold room</b><p>Lifeboat (Astra, pick) · FLOAT (Sol, pick) · Holdbar (DeepSeek). The cooler fails and the agent rescues, sells or insures the stock. Florists were the first customer twice.</p></div>
+<div class="theme"><span class="votes">3 models · 1 pick</span><br><b>Motorised home and cabin guardian</b><p>DRYP (GLM, pick) · Hyttevakt (Opus) · Vri (Fable). Motors turn the water valve and heaters before damage happens. Sold through the insurer, Fremtind.</p></div>
+<div class="theme"><span class="votes">2 models · 1 pick</span><br><b>A hardware leash on AI spending</b><p>Fullmakt (DeepSeek, pick) · Mandate (Astra). The agent proposes and the device seals. Money moves only on a physical approval the agent can't forge.</p></div>
+<div class="theme"><span class="votes">2 models</span><br><b>Kids' money you can touch</b><p>Nøff (Opus) · Ukepeng (GLM). Allowance, chores and saving goals turned into motors, beads and a jingle, with every krone approved by a parent through Vipps.</p></div>
+<div class="theme"><span class="votes">3 wild cards</span><br><b>Objects with their own bank account</b><p>Huset har BankID (Opus) · The Building That Hires Its Own Caretaker (Astra) · BUY MYSELF (Sol). A house, building or machine that earns, saves and pays its own debts.</p></div>
+</div>
+
+<div class="rec"><b>Recommendation:</b> build the home scam guardian, using Fullmakt's hardware seal as its money guardrail. It's the strongest independent signal and the most direct hit on DNB's biggest consumer pain. The seal also gives judges a checkable moment: the scammer orders the device to release the payment, and it physically can't. The runner-up is <b>DRYP</b>, the cleanest physical demo of the lot: spill water, the valve turns, the claim is signed with a long press. Expect other teams at a DNB hackathon to pitch scam protection too. The agent plus the hardware seal is what sets this one apart.<br><br><b>How the agent runs:</b> the board runs its own Wi-Fi firmware and calls a hosted agent API directly, with no laptop in between. It sends events and streams mic audio, and gets back speech, screen updates and motor commands. The agent service calls Claude with tools (hold payment, alert family, speak) behind a policy layer. Releasing money needs a seal signed on the device, which the agent can't forge. Full spec: <code>docs/architecture.md</code></div>
+
+<h2>Every round 2 idea</h2>
+<div class="grid">
+<div class="card"><h3>Claude Opus 5.5</h3>
+<div class="idea picked"><b>Varsko</b><span class="tag pick">PICK</span><p>A fraud guard on an older person's kitchen table. It combines what it hears with live DNB payment alerts. On a scam it speaks over the call, swings up a STOP flag, holds the payment and alerts family. Release needs two people, and nothing it hears can switch it off.</p></div>
+<div class="idea"><b>Nøff</b><p>An AI piggy bank linked to a real DNB kids' account. Shake it to hear your balance, and chores become Vipps requests to the parents.</p></div>
+<div class="idea"><b>Hyttevakt</b><p>An insurer-paid cabin guardian. Motors turn heaters, shut water and open vents, heating when power is cheap. It asks before spending.</p></div>
+<div class="idea wildcard"><b>Huset har BankID</b><span class="tag wild">WILD</span><p>Every house gets a bank account and an agent. It pays its own bills, saves for its roof, and the owners act as its board.</p></div></div>
+
+<div class="card"><h3>Claude Fable 5.1</h3>
+<div class="idea picked"><b>Vern</b><span class="tag pick">PICK</span><p>An anti-scam body next to grandma's phone. It recognises fraud scripts, turns to face her and warns her, puts a reversible 24-hour hold on large transfers and alerts a relative through Vipps. It never moves money.</p></div>
+<div class="idea"><b>Vri</b><p>Motorised clamps that fit existing radiator valves and the main water tap. They heat when power is cheapest, shut off leaks and start the insurance claim.</p></div>
+<div class="idea"><b>Disk</b><p>A cash-flow needle on a shop counter. It forecasts from Vipps sales, footfall and weather, reorders within budget and offers DNB credit at the moment of need.</p></div>
+<div class="idea wildcard"><b>Flykt</b><span class="tag wild">WILD</span><p>A wallet on four wheels that drives away from you when you can't afford the purchase, arguing out loud.</p></div></div>
+
+<div class="card"><h3>GPT-6.1 Sol</h3>
+<div class="idea picked"><b>FLOAT</b><span class="tag pick">PICK</span><p>Perishable stock gets an AI sales agent. When the cooler fails it contacts trade buyers, compares offers and proposes a sale. The owner approves on the device and the buyer pays through Vipps. Fixed rules check every action.</p></div>
+<div class="idea"><b>BAILIFF</b><p>Rental equipment with an agent that arranges extensions and returns, and records evidence when something goes wrong.</p></div>
+<div class="idea"><b>OMBUD</b><p>A household advocate that helps check suspicious money requests.</p></div>
+<div class="idea wildcard"><b>BUY MYSELF</b><span class="tag wild">WILD</span><p>A rented machine that books its own jobs and pays off its own loan: "May I use the proceeds to pay down my loan?"</p></div></div>
+
+<div class="card"><h3>GPT-6 Astra</h3>
+<div class="idea picked"><b>Lifeboat</b><span class="tag pick">PICK</span><p>An emergency manager for small businesses. When a florist's cold room warms, the agent gets storage and courier quotes, replans when a supplier drops out, and books nothing until the confirm button is pressed.</p></div>
+<div class="idea"><b>Mandate</b><p>A physical console that gives AI purchasing agents limited, revocable spending authority.</p></div>
+<div class="idea"><b>Return Address</b><p>A rental item that arranges its own handover, return, repair and next booking.</p></div>
+<div class="idea wildcard"><b>The Building That Hires Its Own Caretaker</b><span class="tag wild">WILD</span><p>A housing co-op's budget with a voice. Residents vote with buttons, and the agent gets quotes and buys jointly with neighbouring buildings.</p></div></div>
+
+<div class="card"><h3>DeepSeek V4.1 Flash</h3>
+<div class="idea picked"><b>Fullmakt</b><span class="tag pick">PICK</span><p>A device that holds an AI agent's spending authority. The agent proposes, but money moves only on a seal the device creates, and a motor locks the knob when a payment breaks the rules. "BankID proves who you are; Fullmakt proves what you allowed."</p></div>
+<div class="idea"><b>Holdbar</b><p>An agent in a commercial fridge that judges whether food is spoiled, calls a technician, files the claim and builds the food-safety record DNB can lend against.</p></div>
+<div class="idea"><b>Bua</b><p>A four-wheeled shop for football tournaments and flea markets. It drives to the crowd, adjusts prices, takes Vipps and hands the treasurer finished books.</p></div>
+<div class="idea wildcard"><b>Testament</b><span class="tag wild">WILD</span><p>A box with a weekly knob-turn check-in. If the check-ins stop, it becomes your executor and plays your voice to your heirs.</p></div></div>
+
+<div class="card"><h3>Kimi K2.6</h3>
+<div class="idea picked"><b>Håndtrykk</b><span class="tag pick">PICK</span><p>A neutral escrow box for in-person second-hand sales. Both people press a button, the buyer pays by Vipps QR on the screen, and a motor unlocks the box once the agent confirms the payment.</p></div>
+<div class="idea"><b>Vakt</b><p>A guardian on wheels for older people living alone. It finds the person, notices when something seems wrong and makes small purchases for them through DNB.</p></div>
+<div class="idea"><b>Klima-Kompis</b><p>A carbon-budget desk pet that reads your DNB transactions and celebrates or sulks with motors, lights and sound.</p></div></div>
+
+<div class="card"><h3>GLM-5.3</h3>
+<div class="idea picked"><b>DRYP</b><span class="tag pick">PICK</span><p>It shuts the water before the insurer wakes up. It hears the hiss and sees humidity rising, counts down out loud, and a motor closes the valve. It drafts the claim and books a plumber, and money moves only on a long press.</p></div>
+<div class="idea"><b>Bestevenn</b><p>A bank branch in grandma's hallway. It catches scams as she retells the call, detects falls, reads bills aloud and closes a motorised shutter for privacy.</p></div>
+<div class="idea"><b>Ukepeng</b><p>A shelf robot for allowance. Kids turn a dial to split money across SPEND, SAVE and GIVE, and motors move the beads.</p></div>
+<div class="idea wildcard"><b>GRIS</b><span class="tag wild">WILD</span><p>A savings pet that survives neglect by taking small overdrafts in its own name. You inherit the pig's debt.</p></div></div>
+</div>
+
+<h2>Hardware reality check (both rounds)</h2>
+<div class="note"><ul>
+<li><b>Not everything fits at once:</b> the 14-port board has 12 module ports, so no build can use every part (Opus and DeepSeek both checked).</li>
+<li><b>The agent lives off-board:</b> the SDK talks to the board over USB serial, so the agent runs on a laptop or in the cloud and the board is its body. Wi-Fi needs extra firmware.</li>
+<li><b>Voice is the main risk:</b> the mic streams only a sound level by default. Speech capture needs a little custom firmware, with the laptop's mic as the fallback.</li>
+<li><b>Sim-only parts:</b> the camera, load cell and soil sensor have no firmware driver.</li>
+<li><b>First build:</b> it downloads about 2.4 GB of tools, so start it early.</li>
+<li><b>Check before the stage:</b> fraud-loss figures, the cabin count and the €30B fraud figure all came from model memory.</li>
+</ul></div>
+
+<h2 class="round">Round 1: open brainstorm</h2>
+<div class="note"><b>Caveat:</b> in round 1, Kimi, Astra and DeepSeek read other members' files, so overlaps there are not independent.</div>
+<div class="themes">
+<div class="theme"><b>Physical checkpoint against payment scams</b><p>VARDE (Opus) · Vakt (Fable) · Anker (GLM) · GRENSE (Kimi) · KINLOCK (Sol)</p></div>
+<div class="theme"><b>Live evidence that unlocks money</b><p>UNBUILD (Sol, Astra) · Bunnsolid (GLM) · ATTEST (Opus) · Kaldt Gull (GLM) · Tillitshylla (Fable) · Flomvakt (DeepSeek)</p></div>
+<div class="theme"><b>Pay-per-use finance</b><p>SHIFTNOTE (Sol) · Takt (Fable) · Piecework (Astra)</p></div>
+<div class="theme"><b>Physical escrow and estate</b><p>Depositum · Livstegn (DeepSeek)</p></div>
+</div>
+
+<div class="grid" style="margin-top:14px">
+<div class="card"><h3>Claude Opus 5.5</h3>
+<div class="idea picked"><b>VARDE</b><span class="tag pick">PICK</span><p>The bank's "second screen" on the kitchen table: it shows the real payee where a scammer steering your screen can't see it and pauses risky payments for 24 hours. "Kodebrikke 2.0".</p></div>
+<div class="idea"><b>TYNGDE</b><p>A cash-free piggy bank: shake to hear your balance.</p></div>
+<div class="idea"><b>ATTEST</b><p>A shipment puck that releases escrow or insurance payouts.</p></div>
+<div class="idea wildcard"><b>Budsjettarmen</b><span class="tag wild">WILD</span><p>A robot arm flips your phone face-down after 23:00.</p></div></div>
+<div class="card"><h3>Claude Fable 5.1</h3>
+<div class="idea picked"><b>Vakt</b><span class="tag pick">PICK</span><p>A scam-proof physical routine: a relative's recorded voice, a "who told you to pay?" knob, and a face-down cooling-off period.</p></div>
+<div class="idea"><b>Tillitshylla</b><p>An honesty-box shelf with Vipps and shrinkage insurance.</p></div>
+<div class="idea"><b>Takt</b><p>Pay-per-use green equipment financing.</p></div>
+<div class="idea wildcard"><b>Kortklipper'n</b><span class="tag wild">WILD</span><p>A robot arm cuts up your card.</p></div></div>
+<div class="card"><h3>GPT-6.1 Sol</h3>
+<div class="idea picked"><b>UNBUILD</b><span class="tag pick">PICK</span><p>Stations that check reclaimed building parts on delivery and turn them into invoices and financing.</p></div>
+<div class="idea"><b>SHIFTNOTE</b><p>Machine loans charged per production cycle.</p></div>
+<div class="idea"><b>KINLOCK</b><p>A family-delegated banking console.</p></div></div>
+<div class="card"><h3>GPT-6 Astra</h3>
+<div class="idea picked"><b>UNBUILD</b><span class="tag pick">PICK</span><p>A reclaimed-parts rack that sets the credit limit.</p></div>
+<div class="idea"><b>Quiet Dividend</b><p>A fund that pays neighbours for construction noise.</p></div>
+<div class="idea"><b>Piecework</b><p>Robots financed per accepted unit of work.</p></div>
+<div class="idea wildcard"><b>The Robot That Buys Itself</b><span class="tag wild">WILD</span><p>It pays off its own financing.</p></div></div>
+<div class="card"><h3>DeepSeek V4.1 Flash</h3>
+<div class="idea picked"><b>Flomvakt</b><span class="tag pick">PICK</span><p>A NOK 500 farm flood gauge whose tamper-evident log triggers an automatic insurance payout.</p></div>
+<div class="idea"><b>Depositum</b><p>An escrow locker for second-hand trades.</p></div>
+<div class="idea"><b>Livstegn</b><p>A proof-of-life check-in that opens the estate drawer.</p></div>
+<div class="idea wildcard"><b>Skilsmisseboks</b><span class="tag wild">WILD</span><p>A two-key divorce escrow box.</p></div></div>
+<div class="card"><h3>Kimi K2.6</h3>
+<div class="idea picked"><b>GRENSE</b><span class="tag pick">PICK</span><p>Friction against impulse buying: 20 knob turns, a spoken reason, and a robot arm holding your card.</p></div>
+<div class="idea"><b>HAVN</b><p>Preventive cabin insurance.</p></div>
+<div class="idea"><b>GRØNNKALK</b><p>A carbon thermostat linked to your card.</p></div>
+<div class="idea wildcard"><b>LØNNSFORHANDLEREN</b><span class="tag wild">WILD</span><p>A robot arm salary-negotiation coach.</p></div></div>
+<div class="card"><h3>GLM-5.3</h3>
+<div class="idea picked"><b>Bunnsolid</b><span class="tag pick">PICK</span><p>Live collateral checks. The credit line freezes when a pallet disappears.</p></div>
+<div class="idea"><b>Anker</b><p>Large transfers confirmed by hand on the kitchen table.</p></div>
+<div class="idea"><b>Kaldt Gull</b><p>A seafood cold-chain trust record.</p></div>
+<div class="idea wildcard"><b>MONS</b><span class="tag wild">WILD</span><p>A desk pet that starves when invoices pile up.</p></div></div>
+</div>
+<p class="sub" style="margin-top:20px">Full write-ups: <code>council/*.md</code> and <code>council-2/*.md</code></p>
+</body></html>
