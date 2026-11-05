@@ -775,7 +775,7 @@ code:
     g_setupMode = sgDecideSetupMode();
     g_bootIntent = 0;
     g_eventQ = xQueueCreate(32, sizeof(char*));
-    g_netQ = xQueueCreate(16, sizeof(char*));
+    g_netQ = xQueueCreate(32, sizeof(char*));
     g_mtx = xSemaphoreCreateMutex();
     g_emitMtx = xSemaphoreCreateMutex();
     sgInitDeviceId();
@@ -798,7 +798,10 @@ code:
     {
       JsonDocument d;
       d["fw"] = SG_FW_VERSION;
-      d["reason"] = (int)esp_reset_reason();
+      static const char* const rr[] = {"UNKNOWN", "POWERON", "EXT", "SOFTWARE", "PANIC", "INT_WDT",
+                                       "TASK_WDT", "WDT", "DEEPSLEEP", "BROWNOUT", "SDIO"};
+      int r = (int)esp_reset_reason();
+      d["reason"] = r >= 0 && r < 11 ? rr[r] : "UNKNOWN";
       d["free_heap"] = ESP.getFreeHeap();
       d["mode"] = g_setupMode ? "setup" : "normal";
       d["log_events"] = g_logEvents;

@@ -78,7 +78,7 @@ static bool sgLogAppend(uint32_t seq, const char* json, size_t len) {
       sgSegPath(g_segStart[0], path, sizeof path); LittleFS.remove(path);
       memmove(g_segStart, g_segStart + 1, (SG_LOG_SEGMENTS - 1) * sizeof(uint32_t));
       g_segCount--;
-      g_logEvents -= SG_LOG_PER_SEGMENT;
+      g_logEvents = g_logEvents > SG_LOG_PER_SEGMENT ? g_logEvents - SG_LOG_PER_SEGMENT : 0;
     }
     g_segStart[g_segCount++] = seq;
     g_segLines = 0;

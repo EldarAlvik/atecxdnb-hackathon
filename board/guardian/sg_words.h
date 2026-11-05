@@ -132,63 +132,94 @@ static int sgFindMember(int id) {
 }
 
 // ---------------- matching ----------------
-// Checks one transcript segment. Fills `out` with the text where every spoken
-// family word is replaced by SG_REDACTED, and `ids`/`names` with the members found.
-static int sgWordsMatch(const char* text, String& out, uint8_t* ids, char (*names)[SG_NAME_MAX + 1], int maxIds) {
-  out = text;
-  size_t len = strlen(text);
-  if (!g_memberCount || len == 0 || len > 1500) return 0;
+struct SgCand { uint8_t id, nwords; char name[SG_NAME_MAX + 1]; uint8_t salt[16], hash[32]; };
+static const size_t SG_MATCH_WINDOW = 600;      // bytes per pass
+static const size_t SG_MATCH_AHEAD  = 160;      // look past the window for a phrase that starts in it
 
-  struct Cand { uint8_t id, nwords; char name[SG_NAME_MAX + 1]; uint8_t salt[16], hash[32]; };
-  static Cand cands[SG_MAX_MEMBERS];          // ws task only
-  int nc = 0;
-  xSemaphoreTake(g_wordsMtx, portMAX_DELAY);
-  for (int i = 0; i < g_memberCount; i++) {
-    if (!g_members[i].nwords) continue;
-    Cand& c = cands[nc++];
-    c.id = g_members[i].id; c.nwords = g_members[i].nwords;
-    memcpy(c.name, g_members[i].name, sizeof c.name);
-    memcpy(c.salt, g_members[i].salt, 16); memcpy(c.hash, g_members[i].hash, 32);
-  }
-  xSemaphoreGive(g_wordsMtx);
-  if (!nc) return 0;
-
-  static char norm[1600]; static SgTok toks[200];   // ws task only
-  int nt = sgTokenize(text, len, norm, sizeof norm, toks, 200);
-  struct Range { uint16_t s, e; } ranges[16]; int nr = 0;
-  int found = 0;
+// Matches the window text[0, len) (looking up to `ahead` more bytes for phrases
+// that start inside it) and appends it to `out` with every family word replaced.
+// New members found are added to ids/names. Returns how many bytes it consumed:
+// at least `len`, more if a replaced phrase ran past the window.
+static size_t sgMatchWindow(const char* text, size_t len, size_t ahead, String& out, const SgCand* cands, int nc,
+                            uint8_t* ids, char (*names)[SG_NAME_MAX + 1], int maxIds, int& found) {
+  static const size_t SPAN = SG_MATCH_WINDOW + SG_MATCH_AHEAD;
+  static char norm[SPAN + 8];
+  static SgTok toks[SPAN / 2 + 1];              // a token needs a letter and a separator
+  struct Range { uint16_t s, e; };
+  static Range ranges[SG_MATCH_WINDOW / 3 + 1]; // a word is at least 3 bytes
+  const int maxRanges = sizeof ranges / sizeof ranges[0];
+  int nt = sgTokenize(text, len + ahead, norm, sizeof norm, toks, sizeof toks / sizeof toks[0]);
+  int nr = 0;
   char phrase[SG_WORD_MAX + 8]; uint8_t h[32];
   for (int c = 0; c < nc; c++) {
     bool hit = false;
-    for (int i = 0; i + cands[c].nwords <= nt; i++) {
+    for (int i = 0; i + cands[c].nwords <= nt && toks[i].s < len; i++) {
       size_t pl = sgJoin(norm, toks, i, cands[c].nwords, phrase, sizeof phrase);
       if (pl < (size_t)SG_WORD_MIN) continue;
       sgSha256(cands[c].salt, 16, (const uint8_t*)phrase, pl, h);
       if (!sgConstEq(h, cands[c].hash, 32)) continue;
       hit = true;
-      if (nr < 16) ranges[nr++] = {toks[i].s, toks[i + cands[c].nwords - 1].e};
+      if (nr < maxRanges) ranges[nr++] = {toks[i].s, toks[i + cands[c].nwords - 1].e};
     }
-    if (hit && found < maxIds) {
+    bool known = false;
+    for (int k = 0; k < found; k++) known |= ids[k] == cands[c].id;
+    if (hit && !known && found < maxIds) {
       ids[found] = cands[c].id;
       memcpy(names[found], cands[c].name, SG_NAME_MAX + 1);
       found++;
     }
   }
   memset(phrase, 0, sizeof phrase);
-  if (!nr) return found;
-  // Sort ranges, merge overlaps, rebuild the text with the words redacted.
+  memset(norm, 0, sizeof norm);
+  // Sort ranges, skip overlaps, copy the text with the words replaced.
   for (int a = 1; a < nr; a++)
     for (int b = a; b > 0 && ranges[b].s < ranges[b - 1].s; b--) { Range t = ranges[b]; ranges[b] = ranges[b - 1]; ranges[b - 1] = t; }
-  String r; r.reserve(len + 16);
   size_t pos = 0;
   for (int k = 0; k < nr; k++) {
     if (ranges[k].e <= pos) continue;
     size_t s = ranges[k].s < pos ? pos : ranges[k].s;
-    r.concat(text + pos, s - pos);
-    r += SG_REDACTED;
+    out.concat(text + pos, s - pos);
+    out += SG_REDACTED;
     pos = ranges[k].e;
   }
-  r.concat(text + pos, len - pos);
+  if (pos < len) { out.concat(text + pos, len - pos); pos = len; }
+  return pos;
+}
+
+// Checks one transcript segment. Fills `out` with the text where every spoken
+// family word is replaced by SG_REDACTED, and `ids`/`names` with the members found.
+// Long text is checked in windows split at spaces, each looking a little past its
+// end, so a phrase on a window edge is still found.
+static int sgWordsMatch(const char* text, String& out, uint8_t* ids, char (*names)[SG_NAME_MAX + 1], int maxIds) {
+  out = text;
+  size_t len = strlen(text);
+  if (!g_memberCount || len == 0) return 0;
+  static SgCand cands[SG_MAX_MEMBERS];          // ws task only
+  int nc = 0;
+  xSemaphoreTake(g_wordsMtx, portMAX_DELAY);
+  for (int i = 0; i < g_memberCount; i++) {
+    if (!g_members[i].nwords) continue;
+    SgCand& c = cands[nc++];
+    c.id = g_members[i].id; c.nwords = g_members[i].nwords;
+    memcpy(c.name, g_members[i].name, sizeof c.name);
+    memcpy(c.salt, g_members[i].salt, 16); memcpy(c.hash, g_members[i].hash, 32);
+  }
+  xSemaphoreGive(g_wordsMtx);
+  if (!nc) return 0;
+  String r; r.reserve(len + 16);
+  int found = 0;
+  size_t pos = 0;
+  while (pos < len) {
+    size_t end = len - pos > SG_MATCH_WINDOW ? pos + SG_MATCH_WINDOW : len;
+    if (end < len) {
+      size_t sp = end;
+      while (sp > pos && text[sp] != ' ') sp--;
+      if (sp > pos) end = sp;
+      else while (end > pos && ((uint8_t)text[end] & 0xC0) == 0x80) end--;   // UTF-8 boundary
+    }
+    size_t ahead = len - end < SG_MATCH_AHEAD ? len - end : SG_MATCH_AHEAD;
+    pos += sgMatchWindow(text + pos, end - pos, ahead, r, cands, nc, ids, names, maxIds, found);
+  }
   out = r;
   return found;
 }

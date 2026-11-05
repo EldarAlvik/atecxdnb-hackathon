@@ -168,6 +168,16 @@ int main(int argc, char** argv) {
   r = match("ok blå elefant blå elefant ok", &n);
   CHECK(r.find("elefant") == std::string::npos, "no plain word left");
 
+  // Long text is checked in windows: words far into it are still found.
+  std::string longText;
+  for (int i = 0; i < 300; i++) longText += "bla ";
+  longText += "kanelbolle ";
+  for (int i = 0; i < 300; i++) longText += "bla blå elefant ";
+  r = match(longText.c_str(), &n);
+  CHECK(n == 2 && r.find("kanelbolle") == std::string::npos && r.find("elefant") == std::string::npos,
+        "long text (5 KB) fully checked and redacted");
+  CHECK(r.size() > 4000, "long text kept");
+
   printf(failures ? "%d FAILED\n" : "OK\n", failures);
   return failures ? 1 : 0;
 }
