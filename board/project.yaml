@@ -143,8 +143,18 @@ code:
     static WebSocketsClient ws;
     static String g_dgAuthHeader;
 
+    // Session the open socket belongs to, and whether it is being closed. Results
+    // arriving for an old session or after CloseStream are dropped so speech from
+    // a previous call can never be judged as part of the new one.
+    static volatile uint32_t g_wsSession = 0;
+    static volatile bool     g_wsClosing = false;
+
     static void sgAppendTranscript(const char* text, const char* lang) {
       xSemaphoreTake(g_mtx, portMAX_DELAY);
+      if (g_wsClosing || g_wsSession != g_session || !g_guarding) {
+        xSemaphoreGive(g_mtx);
+        return;
+      }
       if (g_transcript.length()) g_transcript += ' ';
       g_transcript += text;
       if (g_transcript.length() > SG_TRANSCRIPT_MAX) {
@@ -169,6 +179,11 @@ code:
           if (g_wsConnected) sgEmitStr("state", "ws", "disconnected");
           g_wsConnected = false;
           g_streamAudio = false;
+          // Monitoring is blind until the stream is back: a SAFE verdict must not
+          // stay green meanwhile. A scam latch is kept.
+          xSemaphoreTake(g_mtx, portMAX_DELAY);
+          if (g_verdict == V_SAFE) { g_verdict = V_UNSURE; g_reason = "STT lost"; }
+          xSemaphoreGive(g_mtx);
           break;
         case WStype_ERROR:
           sgEmitStr("log", "error", String("ws: ") + (payload && length ? String((const char*)payload).substring(0, 120) : String("error")));
@@ -219,10 +234,15 @@ code:
           ws.onEvent(sgOnWs);
           ws.setExtraHeaders(g_dgAuthHeader.c_str());
           ws.setReconnectInterval(3000);
+          g_wsSession = g_session; g_wsClosing = false;
           started = true; closeAt = 0; lastSend = lastKA = now;
           sgEmitStr("state", "ws", "connecting");
         }
-        if (started && (!g_guarding || !wifiOk)) {
+        // Once closing has started it always runs to the end, even if guarding
+        // came back on meanwhile (quick off/on); a new session also forces a fresh
+        // socket. The next pass then reopens for the current session.
+        if (started && (closeAt || !g_guarding || !wifiOk || g_wsSession != g_session)) {
+          g_wsClosing = true;
           if (g_wsConnected && closeAt == 0) {
             g_streamAudio = false;
             ws.sendTXT("{\"type\":\"CloseStream\"}");
@@ -275,10 +295,11 @@ code:
       static WiFiClientSecure tls;
       tls.setInsecure();                 // hackathon: no certificate pinning
       uint32_t lastVersion = 0, lastCall = 0, lastSession = 0;
+      int failStreak = 0;                // consecutive failed calls this session
       for (;;) {
         vTaskDelay(pdMS_TO_TICKS(200));
         uint32_t session = g_session;
-        if (session != lastSession) { lastSession = session; lastVersion = 0; lastCall = 0; }
+        if (session != lastSession) { lastSession = session; lastVersion = 0; lastCall = 0; failStreak = 0; }
         if (!g_guarding || g_scamLatched || WiFi.status() != WL_CONNECTED) continue;
         if (lastCall && millis() - lastCall < SG_AI_PERIOD_MS) continue;
         String text; uint32_t ver;
@@ -291,7 +312,9 @@ code:
           sgEmitStr("log", "error", String("ai: low heap, skipped (max block ") + ESP.getMaxAllocHeap() + ")");
           continue;
         }
-        lastVersion = ver; lastCall = millis();
+        // lastVersion only advances on a valid verdict (below), so a failed call
+        // is retried after SG_AI_PERIOD_MS even if no new speech arrives.
+        lastCall = millis();
 
         JsonDocument req;
         req["model"] = SG_CLAUDE_MODEL;
@@ -317,6 +340,7 @@ code:
           if (code > 0) resp = http.getString();
           http.end();
         }
+        if (code < 0) tls.stop();        // stale keep-alive socket: reconnect next time
         body = String();
         uint32_t ms = millis() - t0;
         g_aiCalls++; g_aiLastMs = ms; g_aiLastHttp = code;
@@ -337,18 +361,24 @@ code:
         } else {
           reason = code > 0 ? String("HTTP ") + code : String("net ") + code;
         }
-        if (session != g_session || !g_guarding) continue;   // guard toggled meanwhile
+        if (v == V_AIERR) failStreak++; else { failStreak = 0; lastVersion = ver; }
 
+        // Session check under the same mutex loop() uses to reset state and bump
+        // the session, so a verdict from a previous call can never land in this one.
         xSemaphoreTake(g_mtx, portMAX_DELAY);
-        if (!g_scamLatched) {
-          if (v == V_AIERR && (g_verdict == V_SAFE || g_verdict == V_UNSURE || g_verdict == V_AIERR || g_verdict == V_NONE)) {
-            g_verdict = V_AIERR; g_reason = reason;
-          } else if (v != V_AIERR) {
+        bool current = session == g_session && g_guarding;
+        if (current && !g_scamLatched) {
+          if (v != V_AIERR) {
             g_verdict = v; g_reason = reason;
             if (v == V_SCAM) g_scamLatched = true;
+          } else if (g_verdict == V_NONE || g_verdict == V_AIERR || failStreak >= 3) {
+            // One transient error keeps the last verdict; show "AI err" only with
+            // nothing to show yet or after 3 failures in a row.
+            g_verdict = V_AIERR; g_reason = reason;
           }
         }
         xSemaphoreGive(g_mtx);
+        if (!current) continue;                              // guard toggled meanwhile
 
         static const char* names[] = {"none", "safe", "unsure", "scam", "ai_error"};
         JsonDocument d;
@@ -445,9 +475,9 @@ code:
         xSemaphoreTake(g_mtx, portMAX_DELAY);
         g_transcript = ""; g_txtVersion = 0;
         g_verdict = V_NONE; g_reason = ""; g_scamLatched = false;
-        xSemaphoreGive(g_mtx);
         g_session++;
         g_guarding = true;
+        xSemaphoreGive(g_mtx);
         if (WiFi.status() != WL_CONNECTED) {
           if (strlen(SG_WIFI_PASSWORD)) WiFi.begin(SG_WIFI_SSID, SG_WIFI_PASSWORD);
           else WiFi.begin(SG_WIFI_SSID);           // open network

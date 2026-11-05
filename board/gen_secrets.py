@@ -26,6 +26,8 @@ def parse_env(path: Path) -> dict:
         value = value.strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
             value = value[1:-1]
+        elif " #" in value:  # unquoted value: drop an inline " # comment"
+            value = value.split(" #", 1)[0].rstrip()
         env[key] = value
     return env
 
