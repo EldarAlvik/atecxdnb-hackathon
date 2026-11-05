@@ -27,7 +27,7 @@ Put these in `.env` in the repo root (git-ignored):
 ```
 ANTHROPIC_API_KEY=...
 DEEPGRAM_API_KEY=...
-WIFI_SSID=...
+WIFI_SSID=...           # optional fallback; the app sets the real network over BLE
 WIFI_PASSWORD=          # empty = open network
 ```
 
@@ -51,8 +51,9 @@ uv run atech upload board          # builds and flashes
 uv run atech check
 ```
 
-- **Button** toggles guarding. When idle, the screen says "Press button to guard"
-  and the lights are off.
+- **Button**: a short press toggles guarding. Holding it **5 s** restarts the
+  board into BLE setup mode. When idle, the screen says "Press button to guard",
+  shows the IP, and the lights are off.
 - **Guarding:** WiFi connects ("WiFi..."), then the Deepgram stream ("CONNECT"),
   then "LISTENING" with a breathing blue yellow-grid. Each verdict lights one grid:
   green = safe, yellow = unsure, red = scam. **Scam stays red until guarding is
@@ -69,6 +70,41 @@ uv run atech monitor --key verdict # or transcript, health, wifi, ws, guard, err
 uv run python board/guardian_test.py   # guard on, speak test lines via Windows TTS, print events
 ```
 
+## Phone app, setup and the local API (v2)
+
+The full protocol is in [`docs/protocol.md`](../docs/protocol.md); the Android app
+is in `android/`, a mock board in `mock/`.
+
+- **Setup mode** starts when no Wi-Fi is saved, after a 5 s button hold, or after
+  `POST /setup` / `atech send setup`. The screen shows `SETUP` and a 6-digit code;
+  the blue breathe is faster. The app finds `Guardian-XXXX` over BLE, pairs with
+  that code, sends the Wi-Fi name and password, and gets a device token back. The
+  board saves the network in NVS and restarts without BLE. A short press cancels
+  setup (the board then uses the saved or the `.env` network). BLE only ever runs
+  in a setup boot: every other boot gives the BT memory back to the heap.
+- **Local API** once Wi-Fi is up: `http://guardian.local/` (port 80) and
+  `ws://guardian.local:81/?token=...`. Every request needs the token.
+- **Family words**: salted SHA-256 hashes in NVS, matched on the board. A spoken
+  word becomes `[family word]` in the transcript, Claude is told that the caller
+  said a verified word for that member, and a `word_match` event goes out.
+- **Settings** (`/config`, NVS): mic gain, AI interval, language, red latch, event
+  keys sent to the app and the log, screen brightness.
+- **Event log**: the last 400-500 events in LittleFS (`/events?since=`), kept across
+  restarts. `health` is not logged.
+- Code: `project.yaml` holds the call pipeline; `guardian/sg_*.h` the new parts.
+
+Testing without and with the phone:
+
+```bash
+uv run python board/test/run_tests.py                # word matching on the PC (g++)
+uv run --group mock python board/hw_test.py          # API smoke test + free heap, board on USB and Wi-Fi
+uv run --group mock python board/hw_test.py --call   # ... plus a guarded call
+uv run atech monitor --key health                    # memory: free_heap, max_block
+```
+
+`hw_test.py` gets a new token over USB (`api_token` action), which logs the phone
+out: pair it again with a 5 s hold afterwards.
+
 ## Events (JSON lines over USB serial)
 
 | key | value |
@@ -79,13 +115,21 @@ uv run python board/guardian_test.py   # guard on, speak test lines via Windows 
 | `transcript` | `{text, lang}` per final Deepgram segment |
 | `verdict` | `{verdict, reason, latched, http, ms, chars}` (+ `detail` on errors) |
 | `health` | `{free_heap, min_free_heap, max_block, audio_sent, audio_dropped, ai_calls, ai_ms, mic_level, ...}` every 5 s |
+| `word_match`, `setup`, `config`, `words`, `degraded`, `startup` | see docs/protocol.md |
 | `error`, `ws_msg`, `wifi_retry` | log lines |
+
+Every event also has `seq` (increasing, kept across restarts) and `ts` (Unix
+seconds once NTP has set the clock, else 0).
 
 ## Caveats
 
 - TLS is **not verified** (`setInsecure()` for Deepgram and Anthropic). That's fine
   for a hackathon, not for production. Pin the CA certs before real use.
 - API keys are compiled into the flash.
+- The local API is plain HTTP on the home network: the token stops strangers from
+  changing things, but anyone on the network can read the traffic, including a
+  family word while it is being set. There is no RAM for a local TLS server next to
+  the two TLS clients.
 - Latency: Deepgram finals arrive about 0.3-1 s after speech. Claude is called at
   most every 6 s, and a call takes about 1-3 s over TLS. So expect a verdict
   2-10 s after the telling sentence.
