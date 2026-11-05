@@ -1,0 +1,263 @@
+// Scam Call Guardian: BLE setup mode (Arduino BLE library on its NimBLE host).
+// The phone pairs with a 6-digit passkey shown on the screen (LE Secure
+// Connections, MITM), sends the Wi-Fi details, and gets the device token back.
+// BLE only runs in a boot that starts in setup mode; every other boot hands the
+// BT memory back to the heap (bleInUse() in project.yaml). Leaving setup mode is a
+// restart. See docs/protocol.md section 1.
+#pragma once
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLESecurity.h>
+#include "host/ble_store.h"
+
+#define SG_BLE_SERVICE  "47a10001-8b3c-4d2e-9f1a-5c6d7e8f9a0b"
+#define SG_BLE_COMMAND  "47a10002-8b3c-4d2e-9f1a-5c6d7e8f9a0b"
+#define SG_BLE_STATUS   "47a10003-8b3c-4d2e-9f1a-5c6d7e8f9a0b"
+#define SG_BLE_NETWORKS "47a10004-8b3c-4d2e-9f1a-5c6d7e8f9a0b"
+
+static const uint32_t SG_SETUP_TIMEOUT_MS  = 10UL * 60 * 1000;
+static const uint32_t SG_SETUP_LINGER_MS   = 60000;   // after success, without `done`
+static const uint32_t SG_SETUP_CONNECT_MS  = 20000;
+
+enum SgSetupPhase : uint8_t { SP_WAITING, SP_SCANNING, SP_CONNECTING, SP_CONNECTED, SP_FAILED, SP_BYE };
+
+static uint32_t g_passkey = 0;
+static volatile bool g_blePeer = false;      // a phone is connected
+static volatile bool g_bleSecure = false;    // ... and paired with the passkey
+static BLECharacteristic* g_chStatus = nullptr;
+static BLECharacteristic* g_chNetworks = nullptr;
+static portMUX_TYPE g_bleMux = portMUX_INITIALIZER_UNLOCKED;
+static char g_bleCmd[600];
+static volatile bool g_bleCmdPending = false;
+static uint8_t  g_setupPhase = SP_WAITING;
+static uint32_t g_setupStartedAt = 0, g_phaseAt = 0;
+static String   g_setupLine;                 // second line on the screen
+static String   g_setupSsid, g_setupPass;    // being tried (pass cleared afterwards)
+static bool     g_setupIsPair = false;
+static volatile uint8_t g_wifiDiscReason = 0;
+
+class SgBleServerCb : public BLEServerCallbacks {
+  void onConnect(BLEServer*, ble_gap_conn_desc* desc) override {
+    g_blePeer = true; g_bleSecure = false;
+    BLESecurity::startSecurity(desc->conn_handle);   // ask the phone to pair now
+  }
+  void onDisconnect(BLEServer*, ble_gap_conn_desc*) override {
+    g_blePeer = false; g_bleSecure = false;
+    BLEDevice::startAdvertising();
+  }
+};
+class SgBleSecurityCb : public BLESecurityCallbacks {
+  uint32_t onPassKeyRequest() override { return g_passkey; }
+  void onPassKeyNotify(uint32_t) override {}
+  bool onSecurityRequest() override { return true; }
+  bool onConfirmPIN(uint32_t) override { return false; }      // no yes/no on this board
+  bool onAuthorizationRequest(uint16_t, uint16_t, bool) override { return true; }
+  void onAuthenticationComplete(ble_gap_conn_desc* desc) override {
+    g_bleSecure = desc->sec_state.encrypted && desc->sec_state.authenticated;
+  }
+};
+class SgBleCommandCb : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic* c) override {
+    String v = c->getValue();
+    if (v.length() == 0 || v.length() >= sizeof g_bleCmd) return;
+    portENTER_CRITICAL(&g_bleMux);
+    memcpy(g_bleCmd, v.c_str(), v.length() + 1);
+    g_bleCmdPending = true;
+    portEXIT_CRITICAL(&g_bleMux);
+  }
+};
+
+static void sgSetupNotify(JsonDocument& d) {
+  String s; serializeJson(d, s);
+  g_chStatus->setValue(s);
+  if (g_blePeer) g_chStatus->notify();
+}
+static void sgSetupEvent(const char* state, const char* error = nullptr) {
+  JsonDocument d; d["state"] = state; if (error) d["error"] = error;
+  sgEmitDoc("state", "setup", d);
+}
+static void sgSetupFail(const char* error) {
+  g_setupPhase = SP_FAILED; g_phaseAt = millis();
+  g_setupPass = String();
+  JsonDocument d; d["state"] = "failed"; d["error"] = error; sgSetupNotify(d);
+  sgSetupEvent("failed", error);
+  g_setupLine = String("Failed: ") + error;
+}
+
+static void sgBleBegin() {
+  g_passkey = 100000 + esp_random() % 900000;
+  BLEDevice::init(String("Guardian-") + (g_deviceId + 9));
+  BLEDevice::setMTU(247);
+  BLEDevice::setSecurityCallbacks(new SgBleSecurityCb());
+  BLESecurity::setCapability(ESP_IO_CAP_OUT);                 // display only
+  BLESecurity::setAuthenticationMode(true, true, true);       // bond, MITM, LE Secure Connections
+  BLESecurity::setPassKey(true, g_passkey);
+  ble_store_clear();                                          // forget phones paired before
+
+  BLEServer* srv = BLEDevice::createServer();
+  srv->setCallbacks(new SgBleServerCb());
+  BLEService* svc = srv->createService(SG_BLE_SERVICE);
+  BLECharacteristic* cmd = svc->createCharacteristic(SG_BLE_COMMAND,
+      BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_ENC |
+      BLECharacteristic::PROPERTY_WRITE_AUTHEN);
+  cmd->setCallbacks(new SgBleCommandCb());
+  g_chStatus = svc->createCharacteristic(SG_BLE_STATUS,
+      BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_READ_ENC |
+      BLECharacteristic::PROPERTY_READ_AUTHEN | BLECharacteristic::PROPERTY_NOTIFY);
+  g_chNetworks = svc->createCharacteristic(SG_BLE_NETWORKS,
+      BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_READ_ENC |
+      BLECharacteristic::PROPERTY_READ_AUTHEN);
+  g_chNetworks->setValue("[]");
+  JsonDocument d;
+  d["state"] = "ready"; d["device"] = g_deviceId; d["fw"] = SG_FW_VERSION; d["proto"] = SG_PROTO;
+  d["saved_ssid"] = g_savedSsid;
+  String s; serializeJson(d, s); g_chStatus->setValue(s);
+  svc->start();
+  BLEAdvertising* adv = BLEDevice::getAdvertising();
+  adv->addServiceUUID(SG_BLE_SERVICE);
+  adv->setScanResponse(true);
+  BLEDevice::startAdvertising();
+
+  WiFi.onEvent([](WiFiEvent_t, WiFiEventInfo_t info) {
+    g_wifiDiscReason = info.wifi_sta_disconnected.reason;
+  }, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+  g_setupStartedAt = g_phaseAt = millis();
+  g_setupPhase = SP_WAITING;
+  g_setupLine = "Open the Guardian app";
+  sgSetupEvent("advertising");
+}
+
+static void sgSetupStartWifi(const String& ssid, const String& pass, bool pair) {
+  g_setupSsid = ssid; g_setupPass = pass; g_setupIsPair = pair;
+  WiFi.disconnect();
+  g_wifiDiscReason = 0;
+  if (pass.length()) WiFi.begin(ssid.c_str(), pass.c_str()); else WiFi.begin(ssid.c_str());
+  g_setupPhase = SP_CONNECTING; g_phaseAt = millis();
+  JsonDocument d; d["state"] = "connecting"; d["ssid"] = ssid; sgSetupNotify(d);
+  sgSetupEvent("connecting");
+  g_setupLine = String("Joining ") + ssid;
+}
+
+static void sgSetupCommand(const char* text) {
+  JsonDocument c;
+  if (deserializeJson(c, text)) { sgSetupFail("bad_request"); return; }
+  const char* op = c["op"] | "";
+  if (!strcmp(op, "scan")) {
+    if (g_setupPhase == SP_CONNECTING || g_setupPhase == SP_SCANNING) return;
+    WiFi.scanNetworks(true);
+    g_setupPhase = SP_SCANNING; g_phaseAt = millis();
+    JsonDocument d; d["state"] = "scanning"; sgSetupNotify(d);
+    g_setupLine = "Scanning Wi-Fi...";
+  } else if (!strcmp(op, "wifi")) {
+    String ssid = c["ssid"] | "", pass = c["pass"] | "";
+    if (ssid.length() < 1 || ssid.length() > 32 || (pass.length() && (pass.length() < 8 || pass.length() > 63))) {
+      sgSetupFail("bad_request"); return;
+    }
+    sgSetupStartWifi(ssid, pass, false);
+  } else if (!strcmp(op, "pair")) {
+    if (!g_savedSsid.length()) { sgSetupFail("no_saved_wifi"); return; }
+    sgSetupStartWifi(g_savedSsid, g_savedPass, true);
+  } else if (!strcmp(op, "done")) {
+    if (g_setupPhase != SP_CONNECTED) { sgSetupFail("bad_request"); return; }
+    g_setupPhase = SP_BYE; g_phaseAt = millis();
+    JsonDocument d; d["state"] = "bye"; sgSetupNotify(d);
+    sgSetupEvent("done");
+    g_setupLine = "Done! Restarting...";
+  } else {
+    sgSetupFail("bad_request");
+  }
+}
+
+static const char* sgDiscReasonError(uint8_t r) {
+  if (r == WIFI_REASON_NO_AP_FOUND) return "no_ssid";
+  if (r == WIFI_REASON_AUTH_FAIL || r == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT ||
+      r == WIFI_REASON_HANDSHAKE_TIMEOUT || r == WIFI_REASON_AUTH_EXPIRE ||
+      r == WIFI_REASON_MIC_FAILURE || r == WIFI_REASON_ASSOC_FAIL) return "auth";
+  return nullptr;
+}
+
+// Called from loop() in setup mode. Returns true when the board should restart.
+static bool sgSetupLoop() {
+  uint32_t now = millis();
+  if (g_bleCmdPending) {
+    char cmd[sizeof g_bleCmd];
+    portENTER_CRITICAL(&g_bleMux);
+    memcpy(cmd, g_bleCmd, sizeof cmd);
+    g_bleCmdPending = false;
+    memset(g_bleCmd, 0, sizeof g_bleCmd);
+    portEXIT_CRITICAL(&g_bleMux);
+    if (g_bleSecure) sgSetupCommand(cmd);         // the characteristic already needs it
+    memset(cmd, 0, sizeof cmd);
+  }
+  switch (g_setupPhase) {
+    case SP_SCANNING: {
+      int n = WiFi.scanComplete();
+      if (n == WIFI_SCAN_RUNNING) {
+        if (now - g_phaseAt > 15000) { WiFi.scanDelete(); sgSetupFail("timeout"); }
+        break;
+      }
+      if (n < 0) { sgSetupFail("timeout"); break; }
+      // Strongest first, unique names, at most 12.
+      int order[40]; int m = 0;
+      for (int i = 0; i < n && m < 40; i++) {
+        if (!WiFi.SSID(i).length()) continue;
+        bool dup = false;
+        for (int k = 0; k < m && !dup; k++) dup = WiFi.SSID(order[k]) == WiFi.SSID(i);
+        if (!dup) order[m++] = i;
+      }
+      for (int a = 1; a < m; a++)
+        for (int b = a; b > 0 && WiFi.RSSI(order[b]) > WiFi.RSSI(order[b - 1]); b--) { int t = order[b]; order[b] = order[b - 1]; order[b - 1] = t; }
+      JsonDocument list; JsonArray arr = list.to<JsonArray>();
+      for (int k = 0; k < m && k < 12; k++) {
+        JsonObject o = arr.add<JsonObject>();
+        o["ssid"] = WiFi.SSID(order[k]);
+        o["rssi"] = WiFi.RSSI(order[k]);
+        o["secure"] = WiFi.encryptionType(order[k]) != WIFI_AUTH_OPEN;
+      }
+      String s; serializeJson(list, s);
+      g_chNetworks->setValue(s);
+      WiFi.scanDelete();
+      g_setupPhase = SP_WAITING; g_phaseAt = now;
+      JsonDocument d; d["state"] = "scanned"; d["count"] = arr.size(); sgSetupNotify(d);
+      g_setupLine = String(arr.size()) + " networks found";
+      break;
+    }
+    case SP_CONNECTING: {
+      if (WiFi.status() == WL_CONNECTED) {
+        if (!g_setupIsPair) sgSaveWifi(g_setupSsid, g_setupPass);
+        g_setupPass = String();
+        String token = sgNewToken();
+        JsonDocument d;
+        d["state"] = "connected"; d["ssid"] = g_setupSsid; d["ip"] = WiFi.localIP().toString();
+        d["host"] = "guardian.local"; d["port"] = SG_HTTP_PORT; d["ws_port"] = SG_WS_PORT;
+        d["device"] = g_deviceId; d["token"] = token;
+        sgSetupNotify(d);
+        token = String(); d.clear();
+        g_setupPhase = SP_CONNECTED; g_phaseAt = now;
+        sgSetupEvent("connected");
+        g_setupLine = String("Connected ") + WiFi.localIP().toString();
+        break;
+      }
+      const char* err = sgDiscReasonError(g_wifiDiscReason);
+      uint32_t age = now - g_phaseAt;
+      if ((err && age > 8000) || age > SG_SETUP_CONNECT_MS) {
+        WiFi.disconnect();
+        sgSetupFail(err ? err : "timeout");
+      }
+      break;
+    }
+    case SP_CONNECTED:
+      if (now - g_phaseAt > SG_SETUP_LINGER_MS) return true;   // token was sent; go
+      break;
+    case SP_BYE:
+      if (now - g_phaseAt > 600) return true;
+      break;
+    default:
+      break;
+  }
+  if (g_setupPhase != SP_CONNECTED && g_setupPhase != SP_BYE && now - g_setupStartedAt > SG_SETUP_TIMEOUT_MS) {
+    sgSetupEvent("timeout");
+    return true;
+  }
+  return false;
+}

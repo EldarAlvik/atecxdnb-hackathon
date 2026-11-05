@@ -3,6 +3,11 @@ board: 14port
 # Scam Call Guardian: mic -> Deepgram live STT (TLS WebSocket) -> Claude Haiku
 # verdict (HTTPS) -> traffic light on three grids + status screen. Everything runs
 # on the board. Secrets: `uv run python board/gen_secrets.py` (see GUARDIAN.md).
+#
+# Version 2 adds BLE setup from the phone, a local API on the home Wi-Fi (HTTP +
+# WebSocket + mDNS), an event log in LittleFS, family security words and settings
+# in NVS. The protocol is docs/protocol.md; the parts live in board/guardian/*.h,
+# included below the same way as secrets.h.
 libraries:
   - links2004/WebSockets@^2.6.1
   - bblanchon/ArduinoJson@^7.2.0
@@ -23,6 +28,14 @@ code:
     #include <HTTPClient.h>
     #include <WebSocketsClient.h>
     #include <ArduinoJson.h>
+    #include <nvs.h>
+    // Listed here (not only in board/guardian/*.h) so PlatformIO finds the libraries.
+    #include <Preferences.h>
+    #include <LittleFS.h>
+    #include <WebServer.h>
+    #include <WebSocketsServer.h>
+    #include <ESPmDNS.h>
+    #include <BLEDevice.h>
     #include "freertos/stream_buffer.h"
     #include "freertos/queue.h"
     #include "freertos/semphr.h"
@@ -35,15 +48,12 @@ code:
     #error "board/secrets.h missing: run `uv run python board/gen_secrets.py` from the repo root"
     #endif
 
+    #include "../../guardian/sg_settings.h"   // settings, saved Wi-Fi, device token (NVS)
+
     // ---------------- configuration ----------------
     static const char* SG_DG_HOST = "api.deepgram.com";
-    static const char* SG_DG_PATH =
-        "/v1/listen?encoding=linear16&sample_rate=16000&channels=1&model=nova-3"
-        "&language=multi&smart_format=true&interim_results=false"
-        "&endpointing=100&language_hint=no&language_hint=en";
     static const char* SG_CLAUDE_URL   = "https://api.anthropic.com/v1/messages";
     static const char* SG_CLAUDE_MODEL = "claude-haiku-5-5";
-    static const uint32_t SG_AI_PERIOD_MS    = 6000;   // min gap between verdict calls
     static const size_t   SG_AUDIO_BUF_BYTES = 16000;  // 0.5 s of 16 kHz 16-bit mono (heap is tight)
     static const size_t   SG_AUDIO_CHUNK     = 3200;   // 100 ms per WebSocket frame
     static const size_t   SG_TRANSCRIPT_MAX  = 2400;   // rolling window (bytes)
@@ -59,7 +69,10 @@ code:
         "for codes, passwords, PINs, BankID codes or confirmations, card numbers, one-time "
         "codes; asking to install apps or give remote access (AnyDesk, TeamViewer); moving "
         "money to a 'safe account', crypto, or buying gift cards; investment or prize "
-        "offers too good to be true. Reply ONLY with compact JSON, no other text: "
+        "offers too good to be true. The family may have set up secret security words; "
+        "the device checks them itself, and '[family word]' in the transcript marks where "
+        "one was spoken. A verified family word is strong evidence the caller is that "
+        "family member. Reply ONLY with compact JSON, no other text: "
         "{\"verdict\":\"safe\"|\"unsure\"|\"scam\",\"reason\":\"<max 8 words>\"}. Write the "
         "reason in the language the call is mostly in: Norwegian (bokmål) for a Norwegian "
         "call, English for an English call. Use \"safe\" only when the call is clearly "
@@ -67,16 +80,20 @@ code:
 
     // ---------------- shared state ----------------
     enum SgVerdict : uint8_t { V_NONE = 0, V_SAFE, V_UNSURE, V_SCAM, V_AIERR };
+    enum : uint8_t { SG_WIFI_NONE = 0, SG_WIFI_SAVED, SG_WIFI_FALLBACK };
     static volatile bool     g_guarding    = false;
     static volatile uint32_t g_session     = 0;      // bumps on every guard-on
     static volatile bool     g_wsConnected = false;
+    static volatile bool     g_sttStarted  = false;  // Deepgram socket opened or opening
     static volatile bool     g_streamAudio = false;  // mic callback writes to buffer
     static volatile int      g_gain        = 8;      // digital mic gain
     static volatile uint32_t g_audioDropped = 0;     // bytes lost to a full buffer
     static volatile uint32_t g_audioSent   = 0;      // bytes sent to Deepgram
     static StreamBufferHandle_t g_audioBuf = nullptr;
-    static QueueHandle_t     g_eventQ      = nullptr; // char* lines, printed by loop()
+    static QueueHandle_t     g_eventQ      = nullptr; // event lines, printed by loop()
+    static QueueHandle_t     g_netQ        = nullptr; // the same lines, to the API task
     static SemaphoreHandle_t g_mtx         = nullptr; // guards strings below
+    static SemaphoreHandle_t g_emitMtx     = nullptr; // seq numbers in order
     static String            g_transcript;            // rolling window
     static uint32_t          g_txtVersion  = 0;       // bumps when text is added
     static volatile uint8_t  g_verdict     = V_NONE;
@@ -84,11 +101,58 @@ code:
     static volatile bool     g_scamLatched = false;
     static volatile uint32_t g_aiCalls = 0, g_aiLastMs = 0;
     static volatile int      g_aiLastHttp  = 0;
+    static volatile int8_t   g_guardReq    = -1;      // set by the API, applied by loop()
+    static volatile uint32_t g_restartAt   = 0;
+    static volatile bool     g_setupMode   = false;
+    static volatile uint8_t  g_wifiSource  = SG_WIFI_NONE;
+    static volatile uint32_t g_seq         = 0;
+    static uint32_t          g_seqSavedHw  = 0;
+    // Family word heard in this call (under g_mtx). 0 = none.
+    static int               g_wordMatchId = 0;
+    static char              g_wordMatchName[25] = "";
+    static uint8_t           g_wordMatched[8];
+    static uint8_t           g_wordMatchedN = 0;
+
+    // ---------------- boot mode ----------------
+    // A software restart keeps this; power-on fills it with noise (ignored).
+    #define SG_INTENT_SETUP 0x5E7A0001u
+    #define SG_INTENT_SKIP  0x5E7A0002u
+    RTC_NOINIT_ATTR static uint32_t g_bootIntent;
+    static int8_t g_bootMode = -1;                    // 1 = setup mode, 0 = normal
+
+    // Setup mode when asked for (long press, POST /setup) or when no Wi-Fi is saved,
+    // unless the last setup was cancelled or timed out.
+    static bool sgDecideSetupMode() {
+      if (g_bootMode >= 0) return g_bootMode == 1;
+      bool setup;
+      if (g_bootIntent == SG_INTENT_SETUP) setup = true;
+      else if (g_bootIntent == SG_INTENT_SKIP) setup = false;
+      else {
+        bool saved = false; nvs_handle_t h; size_t len = 0;
+        if (nvs_open("sgwifi", NVS_READONLY, &h) == ESP_OK) {
+          saved = nvs_get_str(h, "ssid", nullptr, &len) == ESP_OK && len > 1;
+          nvs_close(h);
+        }
+        setup = !saved;
+      }
+      g_bootMode = setup ? 1 : 0;
+      return setup;
+    }
+    // Called by the Arduino core before setup(), after NVS is up: false hands the
+    // BLE controller's memory back to the heap for this whole boot.
+    extern "C" bool bleInUse(void) { return sgDecideSetupMode(); }
+
+    static void sgRequestSetup() { g_bootIntent = SG_INTENT_SETUP; g_restartAt = millis() + 400; }
 
     // ---------------- events (JSON lines, printed from loop only) ----------------
     // Tasks never touch Serial: the generated firmware prints its own events from
     // loop() in several print() calls, so whole lines are queued and loop prints them.
+    // Buffer: [0] flags, [4..7] seq, then the JSON line.
+    enum : uint8_t { SG_EV_NET = 1, SG_EV_LOG = 2 };
+    static const size_t SG_EV_HDR = 8;
+
     static void sgEmit(const char* type, const char* key, JsonVariantConst value) {
+      if (!g_eventQ || !g_emitMtx) return;
       JsonDocument doc;
       doc["type"] = "event";
       JsonObject p = doc["payload"].to<JsonObject>();
@@ -96,12 +160,23 @@ code:
       p["key"] = key;
       p["value"] = value;
       p["source"] = "guardian";
+      time_t t = time(nullptr);
+      uint8_t flags = 0;
+      if (sgEventEnabled(key)) { flags = SG_EV_NET; if (strcmp(key, "health")) flags |= SG_EV_LOG; }
+      xSemaphoreTake(g_emitMtx, portMAX_DELAY);       // seq order == queue order
+      uint32_t seq = g_seq + 1;
+      p["seq"] = seq;
+      p["ts"] = t > 1700000000 ? (uint32_t)t : 0;
       size_t len = measureJson(doc);
-      char* line = (char*)malloc(len + 2);
-      if (!line) return;
-      serializeJson(doc, line, len + 1);
-      line[len] = '\n'; line[len + 1] = 0;
-      if (!g_eventQ || xQueueSend(g_eventQ, &line, 0) != pdTRUE) free(line);
+      char* line = (char*)malloc(SG_EV_HDR + len + 2);
+      if (line) {
+        serializeJson(doc, line + SG_EV_HDR, len + 1);
+        line[SG_EV_HDR + len] = '\n'; line[SG_EV_HDR + len + 1] = 0;
+        line[0] = (char)flags; memcpy(line + 4, &seq, 4);
+        if (xQueueSend(g_eventQ, &line, 0) == pdTRUE) g_seq = seq;
+        else free(line);
+      }
+      xSemaphoreGive(g_emitMtx);
     }
     static void sgEmitStr(const char* type, const char* key, const String& v) {
       JsonDocument d; d.set(v.c_str()); sgEmit(type, key, d.as<JsonVariantConst>());
@@ -112,10 +187,22 @@ code:
     static void sgFlushEvents() {
       char* line;
       for (int i = 0; i < 8 && xQueueReceive(g_eventQ, &line, 0) == pdTRUE; i++) {
-        Serial.write((const uint8_t*)line, strlen(line));
+        const char* json = line + SG_EV_HDR;
+        Serial.write((const uint8_t*)json, strlen(json));
+        if (line[0] && g_netQ && xQueueSend(g_netQ, &line, 0) == pdTRUE) continue;
         free(line);
       }
+      // seq survives restarts: the log holds the last logged one, NVS a high-water
+      // mark, so a number already sent (e.g. health) is never used again.
+      if (g_seq >= g_seqSavedHw) {
+        g_seqSavedHw = g_seq + 256;
+        Preferences p;
+        if (p.begin("sg", false)) { p.putULong("seqhw", g_seqSavedHw); p.end(); }
+      }
     }
+
+    #include "../../guardian/sg_words.h"      // family members, salted word hashes, matching
+    #include "../../guardian/sg_eventlog.h"   // ring of ~500 events in LittleFS
 
     // ---------------- microphone tap (runs on the mic task, core 0) ----------------
     static int32_t g_dcQ8 = 0;
@@ -142,6 +229,7 @@ code:
     // ---------------- Deepgram WebSocket (own task) ----------------
     static WebSocketsClient ws;
     static String g_dgAuthHeader;
+    static String g_dgPath;
 
     // Session the open socket belongs to, and whether it is being closed. Results
     // arriving for an old session or after CloseStream are dropped so speech from
@@ -149,22 +237,49 @@ code:
     static volatile uint32_t g_wsSession = 0;
     static volatile bool     g_wsClosing = false;
 
+    static void sgBuildDgPath() {
+      g_dgPath = "/v1/listen?encoding=linear16&sample_rate=16000&channels=1"
+                 "&smart_format=true&interim_results=false&endpointing=100";
+      switch (g_cfg.lang) {
+        case SG_LANG_NO: g_dgPath += "&model=nova-2&language=no"; break;
+        case SG_LANG_EN: g_dgPath += "&model=nova-3&language=en"; break;
+        default: g_dgPath += "&model=nova-3&language=multi&language_hint=no&language_hint=en"; break;
+      }
+    }
+
     static void sgAppendTranscript(const char* text, const char* lang) {
+      // Spoken family words are found and replaced before the text goes anywhere.
+      String clean;
+      uint8_t ids[4]; char names[4][SG_NAME_MAX + 1];
+      int found = sgWordsMatch(text, clean, ids, names, 4);
+      int fresh[4]; int nf = 0;
       xSemaphoreTake(g_mtx, portMAX_DELAY);
       if (g_wsClosing || g_wsSession != g_session || !g_guarding) {
         xSemaphoreGive(g_mtx);
         return;
       }
       if (g_transcript.length()) g_transcript += ' ';
-      g_transcript += text;
+      g_transcript += clean;
       if (g_transcript.length() > SG_TRANSCRIPT_MAX) {
         int cut = g_transcript.indexOf(' ', g_transcript.length() - SG_TRANSCRIPT_MAX * 3 / 4);
         g_transcript.remove(0, cut < 0 ? g_transcript.length() - SG_TRANSCRIPT_MAX * 3 / 4 : cut + 1);
       }
+      for (int k = 0; k < found; k++) {
+        bool seen = false;
+        for (int j = 0; j < g_wordMatchedN; j++) seen |= g_wordMatched[j] == ids[k];
+        if (seen || g_wordMatchedN >= sizeof g_wordMatched) continue;
+        g_wordMatched[g_wordMatchedN++] = ids[k];
+        if (!g_wordMatchId) { g_wordMatchId = ids[k]; memcpy(g_wordMatchName, names[k], sizeof g_wordMatchName); }
+        fresh[nf++] = k;
+      }
       g_txtVersion++;
       xSemaphoreGive(g_mtx);
-      JsonDocument d; d["text"] = text; if (lang) d["lang"] = lang;
+      JsonDocument d; d["text"] = clean; if (lang) d["lang"] = lang;
       sgEmitDoc("state", "transcript", d);
+      for (int k = 0; k < nf; k++) {
+        JsonDocument m; m["member_id"] = ids[fresh[k]]; m["member"] = names[fresh[k]];
+        sgEmitDoc("state", "word_match", m);
+      }
     }
 
     static void sgOnWs(WStype_t type, uint8_t* payload, size_t length) {
@@ -229,13 +344,15 @@ code:
         bool wifiOk = WiFi.status() == WL_CONNECTED;
         if (g_guarding && wifiOk && !started) {
           // No CA and no fingerprint: the library calls setInsecure(). Empty
-          // protocol: no Sec-WebSocket-Protocol header.
-          ws.beginSSL(SG_DG_HOST, 443, SG_DG_PATH, "", "");
+          // protocol: no Sec-WebSocket-Protocol header. The language setting takes
+          // effect here, on the next connect.
+          sgBuildDgPath();
+          ws.beginSSL(SG_DG_HOST, 443, g_dgPath.c_str(), "", "");
           ws.onEvent(sgOnWs);
           ws.setExtraHeaders(g_dgAuthHeader.c_str());
           ws.setReconnectInterval(3000);
           g_wsSession = g_session; g_wsClosing = false;
-          started = true; closeAt = 0; lastSend = lastKA = now;
+          started = true; g_sttStarted = true; closeAt = 0; lastSend = lastKA = now;
           sgEmitStr("state", "ws", "connecting");
         }
         // Once closing has started it always runs to the end, even if guarding
@@ -251,7 +368,7 @@ code:
           }
           if (!g_wsConnected || now - closeAt > 1500) {
             ws.disconnect();
-            started = false; closeAt = 0;
+            started = false; g_sttStarted = false; closeAt = 0;
             g_wsConnected = false; g_streamAudio = false;
             sgEmitStr("state", "ws", "closed");
           }
@@ -301,10 +418,11 @@ code:
         uint32_t session = g_session;
         if (session != lastSession) { lastSession = session; lastVersion = 0; lastCall = 0; failStreak = 0; }
         if (!g_guarding || g_scamLatched || WiFi.status() != WL_CONNECTED) continue;
-        if (lastCall && millis() - lastCall < SG_AI_PERIOD_MS) continue;
-        String text; uint32_t ver;
+        if (lastCall && millis() - lastCall < g_cfg.aiIntervalS * 1000UL) continue;
+        String text; uint32_t ver; int matchId; char matchName[SG_NAME_MAX + 1];
         xSemaphoreTake(g_mtx, portMAX_DELAY);
         ver = g_txtVersion; text = g_transcript;
+        matchId = g_wordMatchId; memcpy(matchName, g_wordMatchName, sizeof matchName);
         xSemaphoreGive(g_mtx);
         if (ver == lastVersion || text.length() == 0) continue;
         if (!tls.connected() && ESP.getMaxAllocHeap() < 20000) {   // TLS needs ~17 KB blocks
@@ -313,7 +431,7 @@ code:
           continue;
         }
         // lastVersion only advances on a valid verdict (below), so a failed call
-        // is retried after SG_AI_PERIOD_MS even if no new speech arrives.
+        // is retried after the AI interval even if no new speech arrives.
         lastCall = millis();
 
         JsonDocument req;
@@ -323,7 +441,19 @@ code:
         req["system"] = SG_SYSTEM_PROMPT;
         JsonObject m = req["messages"].add<JsonObject>();
         m["role"] = "user";
-        m["content"] = String("Live call transcript so far:\n") + text;
+        String content;
+        if (matchId) {
+          // Only the fact of a match goes to Claude, never the word.
+          content = String("Device check: the caller said the secret family security word "
+                           "registered for the family member \"") + matchName + "\". This "
+                    "strongly indicates the caller really is that family member. Lean towards "
+                    "safe unless they push for codes, passwords, remote access or money "
+                    "transfers to unknown accounts.\n\n";
+        }
+        content += "Live call transcript so far:\n";
+        content += text;
+        m["content"] = content;
+        content = String();
         String body; serializeJson(req, body);
         req.clear();
 
@@ -370,7 +500,7 @@ code:
         if (current && !g_scamLatched) {
           if (v != V_AIERR) {
             g_verdict = v; g_reason = reason;
-            if (v == V_SCAM) g_scamLatched = true;
+            if (v == V_SCAM && g_cfg.redLatch) g_scamLatched = true;
           } else if (g_verdict == V_NONE || g_verdict == V_AIERR || failStreak >= 3) {
             // One transient error keeps the last verdict; show "AI err" only with
             // nothing to show yet or after 3 failures in a row.
@@ -388,12 +518,26 @@ code:
         d["http"] = code;
         d["ms"] = ms;
         d["chars"] = text.length();
+        d["word_match"] = matchId != 0;
         if (v == V_AIERR && resp.length()) d["detail"] = resp.substring(0, 200);
         sgEmitDoc("state", "verdict", d);
       }
     }
 
+    #include "../../guardian/sg_api.h"        // HTTP :80, WebSocket :81, mDNS (own task)
+    #include "../../guardian/sg_ble.h"        // BLE setup mode
+
     // ---------------- display helpers ----------------
+    // Dims a colour to the screen_brightness setting (the backlight is fixed on).
+    static uint16_t sgDim(uint16_t c) {
+      uint32_t p = g_cfg.screenPct;
+      if (p >= 100) return c;
+      uint32_t r = ((c >> 11) & 31) * p / 100, g = ((c >> 5) & 63) * p / 100, b = (c & 31) * p / 100;
+      return (uint16_t)((r << 11) | (g << 5) | b);
+    }
+    static void sgText(const char* s, int16_t x, int16_t y, uint8_t size, uint16_t color) {
+      st7735_tft.displayText(s, x, y, size, sgDim(color));
+    }
     // The built-in font has no æøå: transliterate UTF-8 for the screen only.
     static String sgAscii(const String& in) {
       String out; out.reserve(in.length());
@@ -432,34 +576,260 @@ code:
       }
       int start = (tail && n > maxLines) ? n - maxLines : 0;
       for (int i = start, row = 0; i < n && row < maxLines; i++, row++)
-        st7735_tft.displayText(lines[i].c_str(), 2, y + row * 9, 1, color);
+        sgText(lines[i].c_str(), 2, y + row * 9, 1, color);
+    }
+
+    static void sgLightsOff() {
+      led_green.clear(); led_yellow.clear(); led_red.clear();
+      led_green.show(); led_yellow.show(); led_red.show();
+    }
+
+    // ---------------- Wi-Fi (normal mode) ----------------
+    // The network saved from the phone first; the one compiled in from .env is the
+    // fallback. With both, they take turns, two tries each.
+    static uint8_t sgWifiPick(int attempt) {
+      bool s = g_savedSsid.length() > 0, f = sgHasFallbackWifi();
+      if (s && f) return (attempt / 2) % 2 == 0 ? SG_WIFI_SAVED : SG_WIFI_FALLBACK;
+      return s ? SG_WIFI_SAVED : f ? SG_WIFI_FALLBACK : SG_WIFI_NONE;
+    }
+    static const char* sgWifiBegin(uint8_t src) {
+      g_wifiSource = src;
+      const char* ssid = src == SG_WIFI_SAVED ? g_savedSsid.c_str() : SG_WIFI_SSID;
+      const char* pass = src == SG_WIFI_SAVED ? g_savedPass.c_str() : SG_WIFI_PASSWORD;
+      if (src == SG_WIFI_NONE) return "";
+      if (strlen(pass)) WiFi.begin(ssid, pass); else WiFi.begin(ssid);   // empty = open network
+      return ssid;
+    }
+
+    // ---------------- loop, setup mode ----------------
+    static void sgSetupModeLoop() {
+      static EveryTimer frame, lights;
+      static bool wasDown = true;                     // ignore a press held from the restart
+      bool down = button.isPressed();
+      if (down && !wasDown && !g_restartAt) {         // short press: cancel setup
+        sgSetupEvent("cancelled");
+        g_bootIntent = SG_INTENT_SKIP; g_restartAt = millis() + 300;
+      }
+      wasDown = down;
+      if (sgSetupLoop() && !g_restartAt) {
+        g_bootIntent = SG_INTENT_SKIP;                // a saved network now wins anyway
+        g_restartAt = millis() + 200;
+      }
+      if (lights.ready(40)) {                         // fast blue breathe: setup
+        led_green.clear(); led_red.clear(); led_yellow.clear();
+        float ph = (millis() % 1200) / 1200.0f;
+        float k = 0.5f - 0.5f * cosf(ph * 2.0f * PI);
+        led_yellow.setAll(0, 0, (uint8_t)(10 + 140 * k));
+        led_green.show(); led_yellow.show(); led_red.show();
+      }
+      if (frame.ready(250)) {
+        st7735_tft.clear();
+        sgText("SETUP", 2, 1, 2, ST7735_TFT::COLOR_CYAN);
+        String id = String("Guardian-") + (g_deviceId + 9);
+        sgText(id.c_str(), 160 - st7735_tft.textWidth(id.c_str()) - 2, 4, 1, ST7735_TFT::COLOR_WHITE);
+        char code[16]; snprintf(code, sizeof code, "%06lu", (unsigned long)g_passkey);
+        sgText("Code", 2, 27, 1, ST7735_TFT::COLOR_WHITE);
+        sgText(code, 32, 21, 2, g_blePeer ? ST7735_TFT::COLOR_YELLOW : ST7735_TFT::COLOR_ORANGE);
+        sgText(g_bleSecure ? "paired" : (g_blePeer ? "phone" : ""), 112, 27, 1, ST7735_TFT::COLOR_GREEN);
+        sgDrawWrapped(sgAscii(g_setupLine), 44, 2, ST7735_TFT::COLOR_WHITE, false);
+        sgText("Press button to cancel", 2, 70, 1, ST7735_TFT::COLOR_BLUE);
+        st7735_tft.display();
+      }
+    }
+
+    // ---------------- loop, normal mode ----------------
+    static void sgNormalLoop(int want) {
+      static EveryTimer frame, lights, stats;
+      static uint32_t wifiBeganAt = 0, pressAt = 0;
+      static int lastWifi = -1, wifiAttempt = 0;
+      static bool longFired = false;
+      uint32_t now = millis();
+
+      // ---- button: short press toggles guarding, 5 s hold starts BLE setup ----
+      bool down = button.isPressed();
+      if (down && !pressAt) { pressAt = now ? now : 1; longFired = false; }
+      if (down && pressAt && !longFired && now - pressAt >= 5000) {
+        longFired = true;
+        sgRequestSetup();
+      }
+      if (!down && pressAt) {
+        if (!longFired && now - pressAt < 1500) want = g_guarding ? 0 : 1;
+        pressAt = 0;
+      }
+      if (g_guardReq >= 0) { want = g_guardReq; g_guardReq = -1; }
+
+      if (want >= 0 && (bool)want != g_guarding) {
+        if (want) {
+          xSemaphoreTake(g_mtx, portMAX_DELAY);
+          g_transcript = ""; g_txtVersion = 0;
+          g_verdict = V_NONE; g_reason = ""; g_scamLatched = false;
+          g_wordMatchId = 0; g_wordMatchName[0] = 0; g_wordMatchedN = 0;
+          g_session++;
+          g_guarding = true;
+          xSemaphoreGive(g_mtx);
+        } else {
+          g_guarding = false;
+        }
+        sgEmitStr("state", "guard", g_guarding ? "on" : "off");
+      }
+
+      // ---- Wi-Fi watchdog (non-blocking); the API needs Wi-Fi even when idle ----
+      int ws_ = WiFi.status();
+      if (ws_ != lastWifi) {
+        lastWifi = ws_;
+        JsonDocument d;
+        d["status"] = ws_ == WL_CONNECTED ? "connected" : (ws_ == WL_NO_SSID_AVAIL ? "no_ssid" : (ws_ == WL_CONNECT_FAILED ? "failed" : "down"));
+        d["code"] = ws_;
+        if (ws_ == WL_CONNECTED) { d["ip"] = WiFi.localIP().toString(); d["rssi"] = WiFi.RSSI(); wifiAttempt = 0; }
+        d["source"] = g_wifiSource == SG_WIFI_SAVED ? "saved" : g_wifiSource == SG_WIFI_FALLBACK ? "fallback" : "none";
+        sgEmitDoc("state", "wifi", d);
+      }
+      if (ws_ != WL_CONNECTED && g_wifiSource != SG_WIFI_NONE && now - wifiBeganAt > 15000) {
+        WiFi.disconnect();
+        const char* ssid = sgWifiBegin(sgWifiPick(++wifiAttempt));
+        wifiBeganAt = now;
+        sgEmitStr("log", "wifi_retry", ssid);
+      }
+
+      // ---- traffic light ----
+      if (lights.ready(40)) {
+        uint8_t v = g_verdict;
+        led_green.clear(); led_yellow.clear(); led_red.clear();
+        if (g_guarding) {
+          if (v == V_SCAM)        led_red.setAll(255, 0, 0);
+          else if (v == V_SAFE)   led_green.setAll(0, 255, 0);
+          else if (v == V_UNSURE || v == V_AIERR) led_yellow.setAll(255, 150, 0);
+          else if (g_wsConnected) {                     // listening: slow blue breathe
+            float ph = (millis() % 2400) / 2400.0f;
+            float k = 0.5f - 0.5f * cosf(ph * 2.0f * PI);
+            led_yellow.setAll(0, 0, (uint8_t)(10 + 110 * k));
+          } else if ((millis() / 400) % 2) {            // connecting: blink centre
+            led_yellow.setPixel(4, 60, 60, 60);
+          }
+        }
+        led_green.show(); led_yellow.show(); led_red.show();
+      }
+
+      // ---- screen ----
+      if (frame.ready(250)) {
+        st7735_tft.clear();
+        bool wifiUp = WiFi.status() == WL_CONNECTED;
+        String st = String(wifiUp ? "W+" : "W-") + (g_wsConnected ? " STT+" : " STT-");
+        if (pressAt && now - pressAt >= 1500) {
+          char msg[24]; snprintf(msg, sizeof msg, "%lu", (unsigned long)((5000 - min<uint32_t>(5000, now - pressAt) + 999) / 1000));
+          sgText("Hold for setup", 2, 10, 2, ST7735_TFT::COLOR_CYAN);
+          sgText(msg, 72, 40, 3, ST7735_TFT::COLOR_YELLOW);
+        } else if (!g_guarding) {
+          sgText("Scam Guardian", 2, 4, 1, ST7735_TFT::COLOR_CYAN);
+          sgText(st.c_str(), 160 - st7735_tft.textWidth(st.c_str()) - 2, 4, 1, ST7735_TFT::COLOR_WHITE);
+          sgText("Press button", 8, 24, 2, ST7735_TFT::COLOR_WHITE);
+          sgText("to guard", 32, 44, 2, ST7735_TFT::COLOR_WHITE);
+          if (g_wifiSource == SG_WIFI_NONE) sgText("No WiFi: hold 5s = setup", 2, 70, 1, ST7735_TFT::COLOR_ORANGE);
+          else if (wifiUp) sgText(WiFi.localIP().toString().c_str(), 2, 70, 1, ST7735_TFT::COLOR_BLUE);
+        } else {
+          uint8_t v = g_verdict;
+          const char* big = "LISTENING"; uint16_t col = ST7735_TFT::COLOR_CYAN;
+          if (!wifiUp)                        { big = "WiFi..."; col = ST7735_TFT::COLOR_WHITE; }
+          else if (!g_wsConnected && v == V_NONE) { big = "CONNECT"; col = ST7735_TFT::COLOR_WHITE; }
+          if (v == V_SCAM)   { big = "SCAM!";  col = ST7735_TFT::COLOR_RED; }
+          if (v == V_SAFE)   { big = "SAFE";   col = ST7735_TFT::COLOR_GREEN; }
+          if (v == V_UNSURE) { big = "UNSURE"; col = ST7735_TFT::COLOR_YELLOW; }
+          if (v == V_AIERR)  { big = "AI err"; col = ST7735_TFT::COLOR_YELLOW; }
+          sgText(big, 2, 1, 2, col);
+          String reason, tail; bool fam;
+          xSemaphoreTake(g_mtx, portMAX_DELAY);
+          reason = g_reason; fam = g_wordMatchId != 0;
+          int from = (int)g_transcript.length() - 110;
+          tail = g_transcript.substring(from < 0 ? 0 : from);
+          xSemaphoreGive(g_mtx);
+          if (fam) st += " F";
+          sgText(st.c_str(), 160 - st7735_tft.textWidth(st.c_str()) - 2, 1, 1, ST7735_TFT::COLOR_WHITE);
+          if (from > 0) { int sp = tail.indexOf(' '); if (sp >= 0) tail = tail.substring(sp + 1); }
+          sgDrawWrapped(sgAscii(reason), 19, 2, col, false);
+          st7735_tft.drawLine(0, 38, 159, 38, sgDim(ST7735_TFT::COLOR_BLUE));
+          sgDrawWrapped(tail.length() ? sgAscii(tail) : String("(waiting for speech)"), 42, 4, ST7735_TFT::COLOR_WHITE, true);
+        }
+        st7735_tft.display();
+      }
+
+      // ---- periodic health event ----
+      if (stats.ready(g_guarding ? 5000 : 30000)) {
+        JsonDocument d;
+        d["guarding"] = (bool)g_guarding;
+        d["free_heap"] = ESP.getFreeHeap();
+        d["min_free_heap"] = ESP.getMinFreeHeap();
+        d["max_block"] = ESP.getMaxAllocHeap();
+        d["audio_buf"] = (uint32_t)xStreamBufferBytesAvailable(g_audioBuf);
+        d["audio_sent"] = (uint32_t)g_audioSent;
+        d["audio_dropped"] = (uint32_t)g_audioDropped;
+        d["ai_calls"] = (uint32_t)g_aiCalls;
+        d["ai_ms"] = (uint32_t)g_aiLastMs;
+        d["mic_level"] = microphone.getSoundLevel();
+        d["ws_clients"] = (int)g_wsClientCount;
+        d["log_events"] = g_logEvents;
+        d["degraded"] = g_degraded;
+        sgEmitDoc("sensor", "health", d);
+      }
     }
   setup: |
-    g_audioBuf = xStreamBufferCreate(SG_AUDIO_BUF_BYTES, SG_AUDIO_CHUNK);
+    g_setupMode = sgDecideSetupMode();
+    g_bootIntent = 0;
     g_eventQ = xQueueCreate(32, sizeof(char*));
+    g_netQ = xQueueCreate(16, sizeof(char*));
     g_mtx = xSemaphoreCreateMutex();
-    g_dgAuthHeader = String("Authorization: Token ") + SG_DEEPGRAM_API_KEY;
-    g_transcript.reserve(SG_TRANSCRIPT_MAX + 400);
-    WiFi.mode(WIFI_STA);
-    WiFi.setSleep(false);            // modem sleep adds latency to the audio stream
-    WiFi.setAutoReconnect(true);
-    microphone.onAudio(onMic, nullptr);
-    xTaskCreatePinnedToCore(sgWsTask, "sg_ws", 8192, nullptr, 1, nullptr, 0);
-    xTaskCreatePinnedToCore(sgAiTask, "sg_ai", 12288, nullptr, 1, nullptr, 0);
+    g_emitMtx = xSemaphoreCreateMutex();
+    sgInitDeviceId();
+    sgLoadSettings();
+    g_gain = g_cfg.micGain;
+    sgLoadWifi();
+    sgLoadToken();
+    sgWordsLoad();
+    bool logOk = sgLogBegin();
+    {
+      Preferences p;
+      uint32_t hw = 0;
+      if (p.begin("sg", true)) { hw = p.getULong("seqhw", 0); p.end(); }
+      g_seq = max(hw, g_logLastSeq);
+      g_seqSavedHw = g_seq;              // the first flush saves a new high-water mark
+    }
     led_green.clear();  led_green.show();
     led_yellow.clear(); led_yellow.show();
     led_red.clear();    led_red.show();
+    {
+      JsonDocument d;
+      d["fw"] = SG_FW_VERSION;
+      d["reason"] = (int)esp_reset_reason();
+      d["free_heap"] = ESP.getFreeHeap();
+      d["mode"] = g_setupMode ? "setup" : "normal";
+      d["log_events"] = g_logEvents;
+      d["device"] = g_deviceId;
+      sgEmitDoc("state", "startup", d);
+      if (!logOk) sgEmitStr("log", "error", "littlefs: mount failed, no event log");
+    }
+    WiFi.mode(WIFI_STA);
+    // The API task writes the event log in both modes; it starts the servers once
+    // Wi-Fi is up in normal mode.
+    xTaskCreatePinnedToCore(sgApiTask, "sg_api", 8192, nullptr, 1, nullptr, 1);
+    if (g_setupMode) {
+      sgBleBegin();
+    } else {
+      g_audioBuf = xStreamBufferCreate(SG_AUDIO_BUF_BYTES, SG_AUDIO_CHUNK);
+      g_dgAuthHeader = String("Authorization: Token ") + SG_DEEPGRAM_API_KEY;
+      g_transcript.reserve(SG_TRANSCRIPT_MAX + 400);
+      WiFi.setSleep(false);            // modem sleep adds latency to the audio stream
+      WiFi.setAutoReconnect(true);
+      sgWifiBegin(sgWifiPick(0));
+      microphone.onAudio(onMic, nullptr);
+      xTaskCreatePinnedToCore(sgWsTask, "sg_ws", 8192, nullptr, 1, nullptr, 0);
+      xTaskCreatePinnedToCore(sgAiTask, "sg_ai", 12288, nullptr, 1, nullptr, 0);
+    }
   loop: |
-    static EveryTimer frame, lights, stats;
-    static uint32_t wifiBeganAt = 0;
-    static int lastWifi = -1;
-
-    // ---- guard on/off: the button (edge, used only here) or the laptop ----
+    // ---- USB actions (atech send ...) ----
     int want = -1;
-    if (button.wasPressed()) want = g_guarding ? 0 : 1;
     if (atech_action == "guard") {
       String v = atech_value; v.trim(); v.toLowerCase();
-      if (v == "on" || v == "1" || v == "true") want = 1;
+      if (g_setupMode) atechFail("in setup mode");
+      else if (v == "on" || v == "1" || v == "true") want = 1;
       else if (v == "off" || v == "0" || v == "false") want = 0;
       else if (v == "" || v == "toggle") want = g_guarding ? 0 : 1;
       else atechFail("value must be on, off or toggle");
@@ -467,112 +837,31 @@ code:
     }
     if (atech_action == "gain") {
       int g = atech_value.toInt();
-      if (g >= 1 && g <= 64) g_gain = g; else atechFail("gain must be 1..64");
+      if (g >= 1 && g <= 64) { g_gain = g; g_cfg.micGain = g; sgSaveSettings(); }
+      else atechFail("gain must be 1..64");
       atechDone();
     }
-    if (want >= 0 && (bool)want != g_guarding) {
-      if (want) {
-        xSemaphoreTake(g_mtx, portMAX_DELAY);
-        g_transcript = ""; g_txtVersion = 0;
-        g_verdict = V_NONE; g_reason = ""; g_scamLatched = false;
-        g_session++;
-        g_guarding = true;
-        xSemaphoreGive(g_mtx);
-        if (WiFi.status() != WL_CONNECTED) {
-          if (strlen(SG_WIFI_PASSWORD)) WiFi.begin(SG_WIFI_SSID, SG_WIFI_PASSWORD);
-          else WiFi.begin(SG_WIFI_SSID);           // open network
-          wifiBeganAt = millis();
-        }
-      } else {
-        g_guarding = false;
-      }
-      sgEmitStr("state", "guard", g_guarding ? "on" : "off");
+    if (atech_action == "setup") {          // same as holding the button for 5 s
+      sgRequestSetup();
+      atechDone();
+    }
+    if (atech_action == "api_token") {
+      // A new device token for testing the API from the laptop. Printed on USB
+      // only, never through sgEmit (so never to the network or the log). The
+      // phone's token stops working.
+      String t = sgNewToken();
+      Serial.printf("{\"type\":\"event\",\"payload\":{\"event_type\":\"state\",\"key\":\"api_token\",\"value\":\"%s\",\"source\":\"guardian\"}}\n", t.c_str());
+      t = String();
+      atechDone();
     }
 
-    // ---- WiFi watchdog (non-blocking) ----
-    int ws_ = WiFi.status();
-    if (ws_ != lastWifi) {
-      lastWifi = ws_;
-      JsonDocument d;
-      d["status"] = ws_ == WL_CONNECTED ? "connected" : (ws_ == WL_NO_SSID_AVAIL ? "no_ssid" : (ws_ == WL_CONNECT_FAILED ? "failed" : "down"));
-      d["code"] = ws_;
-      if (ws_ == WL_CONNECTED) { d["ip"] = WiFi.localIP().toString(); d["rssi"] = WiFi.RSSI(); }
-      sgEmitDoc("state", "wifi", d);
+    if (g_restartAt && (int32_t)(millis() - g_restartAt) >= 0) {
+      sgLightsOff();
+      sgFlushEvents();
+      Serial.flush();
+      ESP.restart();
     }
-    if (g_guarding && ws_ != WL_CONNECTED && millis() - wifiBeganAt > 15000) {
-      WiFi.disconnect();
-      if (strlen(SG_WIFI_PASSWORD)) WiFi.begin(SG_WIFI_SSID, SG_WIFI_PASSWORD);
-      else WiFi.begin(SG_WIFI_SSID);
-      wifiBeganAt = millis();
-      sgEmitStr("log", "wifi_retry", SG_WIFI_SSID);
-    }
-
-    // ---- traffic light ----
-    if (lights.ready(40)) {
-      uint8_t v = g_verdict;
-      led_green.clear(); led_yellow.clear(); led_red.clear();
-      if (g_guarding) {
-        if (v == V_SCAM)        led_red.setAll(255, 0, 0);
-        else if (v == V_SAFE)   led_green.setAll(0, 255, 0);
-        else if (v == V_UNSURE || v == V_AIERR) led_yellow.setAll(255, 150, 0);
-        else if (g_wsConnected) {                     // listening: slow blue breathe
-          float ph = (millis() % 2400) / 2400.0f;
-          float k = 0.5f - 0.5f * cosf(ph * 2.0f * PI);
-          led_yellow.setAll(0, 0, (uint8_t)(10 + 110 * k));
-        } else if ((millis() / 400) % 2) {            // connecting: blink centre
-          led_yellow.setPixel(4, 60, 60, 60);
-        }
-      }
-      led_green.show(); led_yellow.show(); led_red.show();
-    }
-
-    // ---- screen ----
-    if (frame.ready(250)) {
-      st7735_tft.clear();
-      if (!g_guarding) {
-        st7735_tft.displayText("Scam Guardian", 2, 4, 1, ST7735_TFT::COLOR_CYAN);
-        st7735_tft.displayText("Press button", 8, 28, 2, ST7735_TFT::COLOR_WHITE);
-        st7735_tft.displayText("to guard", 32, 50, 2, ST7735_TFT::COLOR_WHITE);
-      } else {
-        uint8_t v = g_verdict;
-        const char* big = "LISTENING"; uint16_t col = ST7735_TFT::COLOR_CYAN;
-        if (WiFi.status() != WL_CONNECTED)   { big = "WiFi..."; col = ST7735_TFT::COLOR_WHITE; }
-        else if (!g_wsConnected && v == V_NONE) { big = "CONNECT"; col = ST7735_TFT::COLOR_WHITE; }
-        if (v == V_SCAM)   { big = "SCAM!";  col = ST7735_TFT::COLOR_RED; }
-        if (v == V_SAFE)   { big = "SAFE";   col = ST7735_TFT::COLOR_GREEN; }
-        if (v == V_UNSURE) { big = "UNSURE"; col = ST7735_TFT::COLOR_YELLOW; }
-        if (v == V_AIERR)  { big = "AI err"; col = ST7735_TFT::COLOR_YELLOW; }
-        st7735_tft.displayText(big, 2, 1, 2, col);
-        String st = String(WiFi.status() == WL_CONNECTED ? "W+" : "W-") + (g_wsConnected ? " STT+" : " STT-");
-        st7735_tft.displayText(st.c_str(), 160 - st7735_tft.textWidth(st.c_str()) - 2, 1, 1, ST7735_TFT::COLOR_WHITE);
-        String reason, tail;
-        xSemaphoreTake(g_mtx, portMAX_DELAY);
-        reason = g_reason;
-        int from = (int)g_transcript.length() - 110;
-        tail = g_transcript.substring(from < 0 ? 0 : from);
-        xSemaphoreGive(g_mtx);
-        if (from > 0) { int sp = tail.indexOf(' '); if (sp >= 0) tail = tail.substring(sp + 1); }
-        sgDrawWrapped(sgAscii(reason), 19, 2, col, false);
-        st7735_tft.drawLine(0, 38, 159, 38, ST7735_TFT::COLOR_BLUE);
-        sgDrawWrapped(tail.length() ? sgAscii(tail) : String("(waiting for speech)"), 42, 4, ST7735_TFT::COLOR_WHITE, true);
-      }
-      st7735_tft.display();
-    }
-
-    // ---- periodic health event ----
-    if (stats.ready(g_guarding ? 5000 : 30000)) {
-      JsonDocument d;
-      d["guarding"] = (bool)g_guarding;
-      d["free_heap"] = ESP.getFreeHeap();
-      d["min_free_heap"] = ESP.getMinFreeHeap();
-      d["max_block"] = ESP.getMaxAllocHeap();
-      d["audio_buf"] = (uint32_t)xStreamBufferBytesAvailable(g_audioBuf);
-      d["audio_sent"] = (uint32_t)g_audioSent;
-      d["audio_dropped"] = (uint32_t)g_audioDropped;
-      d["ai_calls"] = (uint32_t)g_aiCalls;
-      d["ai_ms"] = (uint32_t)g_aiLastMs;
-      d["mic_level"] = microphone.getSoundLevel();
-      sgEmitDoc("sensor", "health", d);
-    }
+    if (g_setupMode) sgSetupModeLoop();
+    else sgNormalLoop(want);
 
     sgFlushEvents();

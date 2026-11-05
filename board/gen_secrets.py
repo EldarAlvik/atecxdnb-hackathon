@@ -7,8 +7,9 @@ board/build/src/main.cpp to board/secrets.h. Values are never printed.
 """
 from pathlib import Path
 
-REQUIRED = ["ANTHROPIC_API_KEY", "DEEPGRAM_API_KEY", "WIFI_SSID"]
-OPTIONAL = ["WIFI_PASSWORD"]
+REQUIRED = ["ANTHROPIC_API_KEY", "DEEPGRAM_API_KEY"]
+# Wi-Fi from .env is only the fallback; the phone app sets the network over BLE.
+OPTIONAL = ["WIFI_SSID", "WIFI_PASSWORD"]
 
 here = Path(__file__).resolve().parent
 env_path = here.parent / ".env"
