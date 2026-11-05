@@ -76,7 +76,7 @@ The full protocol is in [`docs/protocol.md`](../docs/protocol.md); the Android a
 is in `android/`, a mock board in `mock/`.
 
 - **Setup mode** starts when no Wi-Fi is saved, after a 5 s button hold, or after
-  `POST /setup` / `atech send setup`. The screen shows `SETUP` and a 6-digit code;
+  `POST /setup` / `atech send setup` (`atech send setup_cancel` leaves it). The screen shows `SETUP` and a 6-digit code;
   the blue breathe is faster. The app finds `Guardian-XXXX` over BLE, pairs with
   that code, sends the Wi-Fi name and password, and gets a device token back. The
   board saves the network in NVS and restarts without BLE. A short press cancels

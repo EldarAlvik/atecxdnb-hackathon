@@ -871,6 +871,14 @@ code:
       sgRequestSetup();
       atechDone();
     }
+    if (atech_action == "setup_cancel") {   // same as a short press in setup mode
+      if (!g_setupMode) atechFail("not in setup mode");
+      else {
+        sgSetupEvent("cancelled");
+        g_bootIntent = SG_INTENT_SKIP; g_restartAt = millis() + 300;
+      }
+      atechDone();
+    }
     if (atech_action == "api_token") {
       // A new device token for testing the API from the laptop. Printed on USB
       // only, never through sgEmit (so never to the network or the log). The
