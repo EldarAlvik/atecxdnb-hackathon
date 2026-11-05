@@ -81,6 +81,10 @@ sealed class ProvisionException(message: String) : Exception(message) {
         "Pairing failed. Check the 6-digit code on the board's screen and try again. " +
             "If this phone was paired with the board before, remove \"Guardian\" in the phone's Bluetooth settings first.",
     )
+    class StaleBond : ProvisionException(
+        "This phone still has an old pairing with the board, which the board has forgotten. " +
+            "Open the phone's Bluetooth settings, forget \"Guardian\", then try again.",
+    )
     class Disconnected : ProvisionException("The board disconnected")
     class Gatt(op: String, status: Int) : ProvisionException("Bluetooth $op failed (status $status)")
     class Timeout(op: String) : ProvisionException("The board did not answer ($op)")

@@ -178,10 +178,20 @@ private class BleSession(
     }
 
     suspend fun open() {
+        // The board forgets every pairing when it enters setup mode (each session has
+        // a new passkey). An old bond on the phone would make Android encrypt with keys
+        // the board no longer has, and drop the link before service discovery.
+        clearStaleBond()
         connectGatt()
         // MTU 247 so a whole status JSON fits in one notification. Not fatal if refused.
         runCatching { op("mtu", 5_000) { it.requestMtu(GuardianGatt.MTU) } }
-        val discovered = op("discover", 15_000) { it.discoverServices() }
+        val discovered = try {
+            op("discover", 15_000) { it.discoverServices() }
+        } catch (e: ProvisionException) {
+            // Dropped right after connecting while still bonded: the old-pairing case.
+            if (device.bondState == BluetoothDevice.BOND_BONDED) throw ProvisionException.StaleBond()
+            throw e
+        }
         if (discovered.status != BluetoothGatt.GATT_SUCCESS) throw ProvisionException.Gatt("discover", discovered.status)
         val service = gatt?.getService(GuardianGatt.SERVICE) ?: throw ProvisionException.NotAGuardian()
         commandChar = service.getCharacteristic(GuardianGatt.COMMAND) ?: throw ProvisionException.NotAGuardian()
@@ -212,6 +222,34 @@ private class BleSession(
                 if (attempt == 1) throw e
                 delay(600) // status 133 on the first try is common; one retry helps
             }
+        }
+    }
+
+    /** Removes this phone's bond with the board, if any. removeBond() is not public API,
+     *  so it is called by reflection; if that is not allowed, the user is asked to do it. */
+    private suspend fun clearStaleBond() {
+        if (device.bondState != BluetoothDevice.BOND_BONDED) return
+        val gone = CompletableDeferred<Unit>()
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context, intent: Intent) {
+                if (intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.ERROR) == BluetoothDevice.BOND_NONE) {
+                    gone.complete(Unit)
+                }
+            }
+        }
+        ContextCompat.registerReceiver(
+            context, receiver, IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED), ContextCompat.RECEIVER_EXPORTED,
+        )
+        try {
+            val started = runCatching {
+                device.javaClass.getMethod("removeBond").invoke(device) as? Boolean ?: false
+            }.getOrDefault(false)
+            if (!started) throw ProvisionException.StaleBond()
+            withTimeoutOrNull(5_000) { gone.await() }
+            if (device.bondState == BluetoothDevice.BOND_BONDED) throw ProvisionException.StaleBond()
+            delay(300)
+        } finally {
+            runCatching { context.unregisterReceiver(receiver) }
         }
     }
 
