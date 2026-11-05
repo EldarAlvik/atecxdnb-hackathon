@@ -130,6 +130,12 @@ seconds once NTP has set the clock, else 0).
   changing things, but anyone on the network can read the traffic, including a
   family word while it is being set. There is no RAM for a local TLS server next to
   the two TLS clients.
+- Someone on the home network can still tie up the local API: the WebSocket library
+  reads handshake headers without a length limit, and the HTTP server reads a
+  declared body (in 1 KB chunks, without keeping it) for up to 5 s. The call
+  pipeline runs on other tasks and keeps working.
+- The Deepgram TLS handshake uses the WebSocket library's own timeouts; the Claude
+  one is capped at 12 s.
 - Latency: Deepgram finals arrive about 0.3-1 s after speech. Claude is called at
   most every 6 s, and a call takes about 1-3 s over TLS. So expect a verdict
   2-10 s after the telling sentence.
