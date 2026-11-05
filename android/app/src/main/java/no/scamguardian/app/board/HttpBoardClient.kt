@@ -14,6 +14,8 @@ import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.HttpUrl
@@ -50,7 +52,13 @@ class HttpBoardClient(
         .header("Authorization", "Bearer ${endpoint.token}")
         .header("Accept", "application/json")
 
-    private suspend fun <T> call(req: Request, de: DeserializationStrategy<T>): T {
+    // Reading the body blocks on the socket (the board sends headers and body apart), so the
+    // whole call runs on the IO pool, never on the caller's (often the main) thread.
+    private suspend fun <T> call(req: Request, de: DeserializationStrategy<T>): T = withContext(Dispatchers.IO) {
+        callBlocking(req, de)
+    }
+
+    private suspend fun <T> callBlocking(req: Request, de: DeserializationStrategy<T>): T {
         val response = try {
             http.newCall(req).await()
         } catch (e: IOException) {
