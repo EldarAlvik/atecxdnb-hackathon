@@ -60,8 +60,12 @@ static void sgSendError(int code, const char* msg) {
   JsonDocument d; d["error"] = msg; sgSendJson(code, d);
 }
 
-// Token, lockout and memory checks for every request.
+static void sgWipeBody();
+// Token, lockout and memory checks for every request. A refused request's body
+// (it may hold a family word) is wiped at once.
 static bool sgGate() {
+  bool ok = false;
+  struct Wipe { bool& ok; ~Wipe() { if (!ok) sgWipeBody(); } } wipe{ok};
   uint32_t now = millis();
   if (g_lockUntil && (int32_t)(g_lockUntil - now) > 0) { sgSendError(429, "too_many_attempts"); return false; }
   g_lockUntil = 0;
@@ -78,6 +82,7 @@ static bool sgGate() {
     return false;
   }
   sgRecover(SG_DEG_HTTP);
+  ok = true;
   return true;
 }
 // Request bodies arrive through the WebServer's "raw" path in small chunks, so a
@@ -97,6 +102,7 @@ static void sgRawBody() {
   }
   g_body[g_bodyLen] = 0;
 }
+static void sgWipeBody() { memset(g_body, 0, sizeof g_body); g_bodyLen = 0; g_bodyOver = false; }
 // Parses the request body as a JSON object. Sends 400 and returns false if not.
 static bool sgBody(JsonDocument& d) {
   if (g_bodyOver) { sgSendError(400, "body too large"); return false; }
@@ -486,7 +492,12 @@ static void sgApiHandleEvent(char* line) {
 }
 
 static void sgApiTask(void*) {
+  uint32_t tokenGen = g_tokenGen;
   for (;;) {
+    if (tokenGen != g_tokenGen && g_wss) {         // new token: old sockets lose access
+      tokenGen = g_tokenGen;
+      for (int i = 0; i < WEBSOCKETS_SERVER_CLIENT_MAX; i++) if (g_wsAuthed[i]) g_wss->disconnect(i);
+    }
     if (!g_apiStarted && !g_setupMode && WiFi.status() == WL_CONNECTED) sgApiStart();
     if (g_apiStarted) {
       if (g_wsClientCount && ESP.getFreeHeap() < SG_HEAP_SHED) {

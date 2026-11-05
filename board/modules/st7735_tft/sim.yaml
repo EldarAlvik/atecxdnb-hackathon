@@ -1,0 +1,49 @@
+# Simulation data for the Atech `st7735_tft` module, read by `atech.sim`
+# (`atech sim-assets`). Frames and every field: src/atech/docs/sim_assets.md.
+# Asset frame: metres, origin at the centre of the bottom (mounting) face,
+# +z out of the top face, +x along the long side.
+#
+# Box sizes are the bounds of Atech's production CAD (atechdotdev/atech-module-renders
+# v1.5, glb_plain/screen.glb, converted to +z up). The CAD footprint is centred
+# 0.15 mm toward -x; the boxes ignore that. `atech sim-assets --meshes/--fetch`
+# uses that CAD for the visuals. Atech has not published masses: the mass, colours,
+# connector, physics material and device frames are guesses, marked PLACEHOLDER.
+#
+# Output: 160x80 colour TFT, ST7735 controller. Spans two ports.
+schema: 1
+
+size_m: [0.0395, 0.0195, 0.00964]  # CAD: atech-module-renders v1.5 glb_plain/screen.glb bounds
+mass_kg: 0.016                  # PLACEHOLDER: replace with Atech module datasheet
+
+colors:                          # PLACEHOLDER: replace with Atech module datasheet
+  body: [0.12, 0.13, 0.15, 1]
+  screen: [0.02, 0.04, 0.08, 1]
+
+connector:                       # PLACEHOLDER: replace with Atech module datasheet
+  # Mates with the board's port frame: centre of the bottom face.
+  pos_m: [0, 0, 0]
+  rpy_deg: [0, 0, 0]
+
+physics_material:                # PLACEHOLDER: replace with Atech module datasheet
+  static_friction: 0.5
+  dynamic_friction: 0.4
+  restitution: 0.1
+
+actuator:
+  type: display
+  chip: ST7735
+  frame:                          # screen centre, viewing direction +z   # PLACEHOLDER: replace with Atech module datasheet
+    pos_m: [0, 0, 0.00964]
+    rpy_deg: [0, 0, 0]
+  width_px: 160                   # catalog
+  height_px: 80                   # catalog
+  color_format: RGB565            # catalog
+  full_redraw_s: 0.273            # the old software-SPI driver's display(); studio's hardware-SPI driver is not measured
+
+semantic:
+  # Wikidata Q-codes (SimReady SL.003), checked on wikidata.org.
+  wikidata_qcode: [Q83341, Q327065]   # liquid-crystal display, display device
+  class: [display, output]
+
+# Fields above that are guesses, not Atech data (exported as atech:placeholders).
+placeholders: [mass_kg, colors, connector, physics_material, actuator.frame]

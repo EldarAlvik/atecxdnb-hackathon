@@ -112,6 +112,7 @@ static bool sgConstEq(const uint8_t* a, const uint8_t* b, size_t n) {
 // once, in the BLE `connected` notification (or the USB `api_token` action).
 static uint8_t g_tokenHash[32];
 static bool    g_hasToken = false;
+static volatile uint32_t g_tokenGen = 0;     // bumps on a new token: live sockets must re-auth
 
 static void sgLoadToken() {
   Preferences p;
@@ -131,6 +132,7 @@ static String sgNewToken() {
   if (!ok) { memset(raw, 0, sizeof raw); return String(); }
   memcpy(g_tokenHash, h, 32);
   g_hasToken = true;
+  g_tokenGen++;
   static const char* hex = "0123456789abcdef";
   String out; out.reserve(64);
   for (int i = 0; i < 32; i++) { out += hex[raw[i] >> 4]; out += hex[raw[i] & 15]; }
