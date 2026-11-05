@@ -238,12 +238,13 @@ static bool sgSetupLoop() {
     portEXIT_CRITICAL(&g_bleMux);
     if (g_bleSecure) sgSetupCommand(cmd);         // the characteristic already needs it
     memset(cmd, 0, sizeof cmd);
+    now = millis();                               // the command stamped g_phaseAt after `now`
   }
   switch (g_setupPhase) {
     case SP_SCANNING: {
       int n = WiFi.scanComplete();
       if (n == WIFI_SCAN_RUNNING) {
-        if (now - g_phaseAt > 15000) { WiFi.scanDelete(); sgSetupFail("timeout"); }
+        if ((int32_t)(now - g_phaseAt) > 15000) { WiFi.scanDelete(); sgSetupFail("timeout"); }
         break;
       }
       if (n < 0) { sgSetupFail("timeout"); break; }
@@ -292,8 +293,8 @@ static bool sgSetupLoop() {
         break;
       }
       const char* err = sgDiscReasonError(g_wifiDiscReason);
-      uint32_t age = now - g_phaseAt;
-      if ((err && age > 10000) || age > SG_SETUP_CONNECT_MS) {
+      int32_t age = (int32_t)(now - g_phaseAt);    // signed: never "huge" if g_phaseAt is newer
+      if ((err && age > 10000) || age > (int32_t)SG_SETUP_CONNECT_MS) {
         int reason = g_wifiDiscReason;
         WiFi.disconnect();
         sgSetupFail(err ? err : "timeout", reason);
@@ -301,10 +302,10 @@ static bool sgSetupLoop() {
       break;
     }
     case SP_CONNECTED:
-      if (now - g_phaseAt > SG_SETUP_LINGER_MS) return true;   // token was sent; go
+      if ((int32_t)(now - g_phaseAt) > (int32_t)SG_SETUP_LINGER_MS) return true;   // token was sent; go
       break;
     case SP_BYE:
-      if (now - g_phaseAt > 600) return true;
+      if ((int32_t)(now - g_phaseAt) > 600) return true;
       break;
     default:
       break;
